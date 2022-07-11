@@ -1,0 +1,148 @@
+---
+title: 'Capstone Project: Exploring Google Trends Data'
+author: "Riku Komatani"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+## Introduction
+In this document, we investigate the trends of popular anime in Japan over time, as well as how that affects the stock prices of different companies. In order to obtain the results, we used two sources of data from `gtrendsR` and `quantmod` library. We also visualized how an anime of our choice affected the stock price of a single company. Moreover, we explored how different stock markets affected each other over time.   
+
+
+## Analysis
+In order to obtain trends of popular anime in Japan, we used the package `gtrendsR` which gives data of any google search term, such as the popularity of search term over time. 
+
+```{r libraries}
+#Loading packages
+library(gtrendsR)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+
+```
+
+```{r anime_trends}
+#Obtaining trends of the following  four animes: Spy x Family, Jujutsu Kaisen, Demon Slayer, One Piece.
+anime_trends <- gtrends(keyword = c("spy x family", "jujutsu kaisen", "demon slayer", "one piece"))
+anime_trends_over_time <- anime_trends$interest_over_time
+anime_trends_over_time <- anime_trends_over_time %>%
+  mutate(hits = as.numeric(hits), na.rm = TRUE)
+anime_trends_over_time <- na.omit(anime_trends_over_time)
+anime_trends_over_time <- anime_trends_over_time %>%
+  mutate_at(vars(date), funs(year, month, day))
+```
+
+```{r anime_trends_per_year}
+#Getting anime trends per year
+anime_trends_per_year <- anime_trends_over_time %>%
+  select(keyword, hits, year) %>%
+  group_by(keyword, year) %>%
+  summarise(total_hits = sum(hits))
+
+#Plotting the yearly anime trend as a bar plot
+library(ggplot2)
+anime_trends_yearly_barplot <- ggplot(anime_trends_per_year, aes(year, total_hits, fill = keyword)) + geom_bar(stat = "identity") + facet_wrap(~keyword) + labs(title = "Anime Trends Per Year", y = "Total Hits", x = "Year") 
+anime_trends_yearly_barplot
+
+```
+```{r anime_trends_line_graph}
+#Plotting the anime trend as a line graph
+anime_trends_line_graph <- ggplot(anime_trends_over_time, aes(date, hits, group = keyword, colour = keyword)) + geom_line(size = 1) + labs(title = "Anime Trends Over Time", x = "Year", y = "Hits (Normalized between 0 and 100)")
+anime_trends_line_graph
+```
+
+As depicted by both bar plot and line graph of anime trends over time, One Piece has been very popular for more than five years, and in fact, it has been running for more than a decade. Both Demon Slayer and Jujutsu Kaisen became a trend during 2021, with Demon Slayer having more hits than Jujutsu Kaisen. Spy x Family got released recently in the summer 2022, so it is just starting to show up in the trends list.
+
+**Analyzing anime trends across each states in the US**
+
+In order to analyze the popularity of anime in each states, we used the `geo` element of the `gtrends` function, which gives the popularity of anime across all 50 states. Additionally, we used the `usmap` package to graph the US map.
+
+```{r region trends}
+#Loading libraries
+library(usmap)
+
+#Getting Region Trends
+region_trends <- gtrends(keyword = c("spy x family", "jujutsu kaisen", "demon slayer", "one piece"), geo = "US")
+anime_trend_by_region <- region_trends$interest_by_region %>%
+  rename(state = location) %>%
+  mutate(state = tolower(state))
+
+#Plotting Region Trends
+anime_trends_by_state_graph <- plot_usmap(data = anime_trend_by_region, values = "hits", color = "red") + scale_fill_continuous(name = "Anime Hits") + facet_wrap(~keyword) + theme(legend.position = "right") + labs(title = "Anime Trends by State")
+anime_trends_by_state_graph
+```
+
+From the US state maps above, one could see that anime is popular in Texas and California, and this is valid since those two states are one of the top states where a lot of anime fans live. In addition, the overall color for One Piece map is lighter than that of Spy x Family map, which is reasonable since One Piece has been popular for more than a decade, while Spy x Family got released less than three months ago.
+
+
+**Getting Stock Values**
+
+In order to obtain stock prices of different companies, we used the package `quantmod` which gives all the data about stock values of companies that we choose as a parameter in the `getSymbols` function.
+
+```{r stock price}
+#Loading libraries
+library(quantmod)
+
+#Getting stock values of following companies: Sony Corporation Group, Amazon, Netflix.
+getSymbols(c("SONY", "AMZN", "NFLX"))
+stocks <- data.frame(SONY$SONY.Close, AMZN$AMZN.Close, NFLX$NFLX.Close, "Date" = as.Date(row.names(as.data.frame(SONY)))) %>%
+  rename(Sony = SONY.Close,
+         Amazon = AMZN.Close,
+         Netflix = NFLX.Close)
+
+single_column_stocks <- stocks %>%
+  gather(key = "Stock", value = "Price", -Date)
+
+#Graphing each stock values
+line_graph_stocks <- ggplot(single_column_stocks, aes(Date, Price, colour = Stock)) + geom_line(size = 1) + labs(title = "Stock Price Over Time", x = "Date", y = "Price") + scale_color_discrete(name = "Company", labels = c("Sony", "Amazon", "Netflix"))
+line_graph_stocks
+                                                                                                        
+```
+
+From the line graph above, we could see a general trend of increase in price of stocks from 2015 to 2022. Amazon has the highest stock value overall, Sony following up, and Netflix has the lowest value. In addition, there is a huge drop in stock values for all companies in 2022, and it seems to keep decreasing. 
+
+
+**Relationship between popularity of anime and stock values**
+
+```{r Comparing trends with stock price}
+#Comparing the relationship between stock price of Sony Corporation Group and Google search hits of Demon Slayer. Platforms such as Crunchyroll and Funimation are popular for viewing Demon Slayer, and both platforms are owned by Sony Corporation Group, so we expect some relationship between these two variables.
+recent_stocks <- stocks %>%
+  filter(Date > as.Date("2017-07-08"))
+graph_sony_and_demon_slayer <- ggplot() + geom_line(recent_stocks, mapping = aes(Date, Sony, color = "Price of Sony Stock")) + geom_line(filter(anime_trends_over_time, keyword == "demon slayer"), mapping = aes(as.Date(date), hits, color = "Demon Slayer Hits")) + scale_y_continuous(name = "Price", sec.axis = sec_axis(~., name = "Hits")) + labs(title = "Sony Stock Price vs Demon Slayer Hits Over Time", x = "Date", y = "Price")
+graph_sony_and_demon_slayer
+```
+
+
+From the graph above, it is obvious that an increase in popularity of the anime Demon Slayer results in an increase of the stock values of Sony Corporation Group. Also, the two peaks of Demon Slayer Hits seems to occur around same time of the year as the two peaks of Sony stock values. Therefore, these two elements are directly related to one another.
+
+
+**Comparing the stock values of different companies**
+
+In order to compare how different companies' stock values changed over time, we used linear regression model to determine if the relationship is direct. We also found the R_squared value of the regression to determine the accuracy of the linear model.
+
+```{r Comparing Amazon stock with Netflix stock}
+#Obtaining linear model and R_squared value between Amazon and Netflix
+model <- lm(Amazon ~ Netflix, data = recent_stocks)
+R_squared <- summary(model)$r.squared
+print(paste0("R_squared value is ", R_squared))
+
+#Graphing Amazon stock values vs Netflix stock values
+graph_amazon_vs_netflix <- ggplot(recent_stocks, aes(Netflix, Amazon)) + geom_point() + geom_smooth(method = "lm", aes(color = "Linear")) + geom_smooth(se = FALSE, aes(color = "Smooth")) + labs(title = "Amazon stock vs Netflix stock", x = "Netflix Stock", y = "Amazon Stock") + scale_color_manual(name = "Model", values = c("blue", "red"))
+graph_amazon_vs_netflix
+```
+
+As proven by the graph above, the relationship between Amazon stock values and Netflix stock values are fairly linear, meaning that as the price of Netflix stock increases, so does the price of Amazon stock. In addition, the R_squared value of the linear model between Netflix stock and Amazon stock is 0.7731601, which is close to 1, and therefore, the relationship is fairly linear.
+
+## Conclusion and Further Work
+We have successfully investigated the trends of popular anime in Japan over time, and found out how an anime influenced a change in stock values of a company. Generally, an increase in popularity of an anime leads to an increase of stock values of companies that hosts and portrays that anime. Moreover, an increase in a stock values of a company leads to an increase in a stock values of another company, if the two companies share common characteristics. Obviously, there are other factors that contribute to a change in stock values, so we need to consider those external factors to precisely measure the relationship between popular trends and stock values. 
+
+Some further work that we could do is to obtain the results of relationships between animes and stocks that we did not cover in this document. Also, since anime is not only popular in the US, but it is popular among the world, especially in Japan, we could possibly investigate the regional anime trends across the world.
+
