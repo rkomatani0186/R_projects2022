@@ -1,9 +1,6 @@
+
+# Heat plot for MLB data
 heat_plot <- function(player, d, HR=FALSE){
-  # inputs
-  # player - name of player
-  # d - pitchRX data frame with variables Batter, Event, and X, Z (location of pitch)
-  # will output a ggplot2 object
-  # need to use print function to display the pot
   # define the strike zone
   topKzone <- 3.5
   botKzone <- 1.6
@@ -14,11 +11,6 @@ heat_plot <- function(player, d, HR=FALSE){
     y=c(botKzone, topKzone, topKzone, botKzone, botKzone)
   )
   # only consider events that are official at-bats
-  # TT <- table(d$Event)
-  # To_Remove_indices <- c(1, 5, 8, 16, 18, 21, 22, 23, 24, 30)
-  # AB <- names(TT)[-To_Remove_indices]
-  # d_AB <- filter(d, Event %in% AB )
-  # define the 1/0 response variable
   d <- d %>%
     filter(!events %in% c("walk", "hit_by_pitch", ""))
   if(HR == FALSE) d <- mutate(d, 
@@ -55,13 +47,8 @@ heat_plot("Harper, Bryce", HData)
 
 
 
-
+# Heat plot for uiuc data
 heat_plot2 <- function(player, d, HR=FALSE){
-  # inputs
-  # player - name of player
-  # d - pitchRX data frame with variables Batter, Event, and X, Z (location of pitch)
-  # will output a ggplot2 object
-  # need to use print function to display the pot
   # define the strike zone
   topKzone <- 3.5
   botKzone <- 1.6

@@ -6,21 +6,13 @@ library(RMySQL)
 library(ggpubr)
 
 
-
+#obtain data from uiuc database
 con <- connect_db("uiuc")
 sc <- dbGetQuery(con, paste("select * from fs_pitches where season in (2020, 2021)"))
 dbDisconnect(con)
 
-# inplay_sc <- sc %>% filter(play_result %in% c("Contact Out", "Single", "Double", "Triple", "Home Run", "Error"))
-# sl <- inplay_sc %>%  
-#   group_by(batter_name) %>%
-#   summarize(count = n()) %>%
-#   filter(count > 40)
-#   
-# sl_batters <- sl$batter_name
-# sl_sc <- inplay_sc %>% filter(batter_name %in% sl_batters)
 
-#Spray Angle
+#Spray Angle tile plot
 
 setup_inplay2 <- function(sc){
   inplay_sc <- sc %>% filter(play_result %in% c("Contact Out", "Single", "Double", "Triple", "Home Run", "Error"))
