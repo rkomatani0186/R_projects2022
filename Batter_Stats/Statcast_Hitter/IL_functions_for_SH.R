@@ -1,3 +1,5 @@
+#IL function used for Statcast Hitter
+
 connect_db <- function(db) {
   con <- dbConnect(MySQL(),
                    user = "mbaadmin",

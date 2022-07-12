@@ -1,5 +1,6 @@
-#Shiny
+#Shiny app for tile plots for batters
 
+#import libraries
 library(shiny)
 library(DBI)
 library(RSQLite)
@@ -11,10 +12,12 @@ library(ggiraph)
 library(RMySQL)
 library(dplyr)
 
+#get data from uiuc database
 con <- connect_db("uiuc")
 sc <- dbGetQuery(con, paste("select * from fs_pitches where season = 2021"))
 dbDisconnect(con)
 
+#filter data into in-play and players with enough in-play data
 inplay_sc <- sc %>% filter(play_result %in% c("Contact Out", "Single", "Double", "Triple", "Home Run", "Error"))
 sl <- inplay_sc %>%  
   group_by(batter_name) %>% 
@@ -23,7 +26,7 @@ sl <- inplay_sc %>%
 sl_batters <- sl$batter_name
 sl_sc <- inplay_sc %>% filter(batter_name %in% sl_batters)
  
-# Define UI for application that draws a histogram
+# Define UI for application that draws a table and plots
 ui <- dashboardPage(skin = "green",
                     
   
@@ -36,12 +39,12 @@ ui <- dashboardPage(skin = "green",
     box(title = "Inputs", width = 6,
         selectizeInput("name", "Select Batter", choices = unique(sl_sc$batter_name))
         ),
-    # Show a table and plot of the generated distribution
-    box(title = "Plot", width = 6,
+    # Show a table and plots of the generated distribution
+    box(title = "Spray Angle", width = 6,
         plotOutput("plot")),
-    box(title = "Plot2", width = 6,
+    box(title = "Exit Velo", width = 6,
         plotOutput("plot2")),
-    box(title = "Plot3", width = 6,
+    box(title = "Launch Angle", width = 6,
         plotOutput("plot3")),
     box(title = "Table", width = 12,
         div(style = 'overflow-y:scroll;height:500px:',
@@ -49,7 +52,7 @@ ui <- dashboardPage(skin = "green",
   )
 )
 
-# Define server logic required to draw a histogram
+# Define server logic required to draw a table and plots
 server <- function(input, output) {
   
   sl_sc_reactive <- reactive({

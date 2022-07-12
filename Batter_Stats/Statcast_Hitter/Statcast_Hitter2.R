@@ -1,3 +1,4 @@
+#Shiny App for spray chart and table for batters modified
 
 #import libraries
 library(shiny)

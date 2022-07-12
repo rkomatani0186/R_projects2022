@@ -1,3 +1,4 @@
+#Shiny app for spray chart, batting average for 13 zones, and heat map
 
 #import libraries
 library(shiny)
@@ -21,7 +22,7 @@ dbDisconnect(con)
 
 
 
-# Define UI for application that displays an input, plot, and table
+# Define UI for application that displays an input, plots, and table
 ui <- dashboardPage(skin = "green",
                     
                     # Application title
@@ -71,7 +72,6 @@ server <- function(input, output, session) {
                          selected = NULL)
     
   })
-  
   
   output$table <- DT::renderDataTable({
     sc_reactive()

@@ -1,5 +1,5 @@
 
-# Heat plot for MLB data
+# Heat plot of batters for MLB data
 heat_plot <- function(player, d, HR=FALSE){
   # define the strike zone
   topKzone <- 3.5
@@ -47,7 +47,7 @@ heat_plot("Harper, Bryce", HData)
 
 
 
-# Heat plot for uiuc data
+# Heat plot of batters for uiuc data
 heat_plot2 <- function(player, d, HR=FALSE){
   # define the strike zone
   topKzone <- 3.5
@@ -90,5 +90,5 @@ heat_plot2 <- function(player, d, HR=FALSE){
     ggtitle(paste(player, type))
 }
 
-heat_plot2("Branden Comia", sc)
+heat_plot2("Justin Janas", sc)
 

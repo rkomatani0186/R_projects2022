@@ -1,3 +1,4 @@
+#Statcast Database for obtaining MLB data
 library(baseballr)
 library(DBI)
 library(RSQLite)
@@ -67,3 +68,11 @@ statcast_write <- function() {
 }
 
 statcast_write()
+
+#To use this:
+# db = dbConnect(SQLite(), "statcast_db.sqlite")
+# dbListTables(db)
+# sc = dbGetQuery(conn = db, statement = "select * from statcast_data")
+# dbDisconnect(db)
+
+

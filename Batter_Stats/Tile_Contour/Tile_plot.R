@@ -1,9 +1,15 @@
+#List of tile and contour plots for batters including spray angle, exit velo, launch angle, and batting average
+
+#import libraries
 library(CalledStrike)
 library(ggplot2)
 library(tidyverse)
 library(DBI)
 library(RMySQL)
 library(ggpubr)
+library(mgcv)
+library(dplyr)
+
 
 
 #obtain data from uiuc database
@@ -13,7 +19,6 @@ dbDisconnect(con)
 
 
 #Spray Angle tile plot
-
 setup_inplay2 <- function(sc){
   inplay_sc <- sc %>% filter(play_result %in% c("Contact Out", "Single", "Double", "Triple", "Home Run", "Error"))
   sl <- inplay_sc %>%  
@@ -225,6 +230,7 @@ ggarrange(R_hr_plot, comia_hr_plot)
 ggarrange(comia_sa_plot, comia_ls_plot, comia_la_plot, comia_hr_plot, ncol = 4)
 
 #-------------------------------------------------------------------------------------
+#Batting average MLB data
 ehit_contour <- function(df, L = seq(0, 1, by = 0.02),
                          title = "Expected Batting Average",
                          NCOL = 2){
@@ -265,6 +271,7 @@ eba_gam_fit <- function(d){
 }
 
 #---------------------------------------------------------------------------------------
+#Batting average uiuc data
 ehit_contour2 <- function(df, L = seq(0, 1, by = 0.02),
                           title = "Expected Batting Average",
                           NCOL = 2){
@@ -300,13 +307,9 @@ ehit_contour2 <- function(df, L = seq(0, 1, by = 0.02),
   }
 }
 
-library(dplyr)
-
 estimated_ba_using_ls_la <- function(d) {
   eba2 <- gam(H ~ s(exit_velocity, launch_angle), data = d)
-  p <- predict(eba2, d, type = "response")
-  
-  
+  predict(eba2, d, type = "response")
 }
 
 eba_gam_fit2 <- function(d){
@@ -314,7 +317,7 @@ eba_gam_fit2 <- function(d){
       data=d)
 }
 
-ehit_contour2(sc %>% filter(batter_name == "Justin Janas"))
+ehit_contour2(sc %>% filter(batter_name == "Branden Comia"))
 
 
 
