@@ -69,6 +69,10 @@ statcast_write <- function() {
 
 statcast_write()
 
+#Export as csv file:
+#sc = dbGetQuery(conn = db, statement = "select * from statcast_data")
+#write.csv(sc, "C:/Users/12244/CSV_2021/sc.csv", row.names = FALSE)
+
 #To use this:
 # db = dbConnect(SQLite(), "statcast_db.sqlite")
 # dbListTables(db)

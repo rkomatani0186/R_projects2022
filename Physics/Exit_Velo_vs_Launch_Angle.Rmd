@@ -1,0 +1,120 @@
+---
+title: "LA_vs_EV"
+output: html_document
+date: "2022-07-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r Setting up}
+#import libraries
+library(DBI)
+library(RSQLite)
+library(baseballr)
+library(dplyr)
+library(ggplot2)
+library(plyr)
+#devtools::install_github("BillPetti/baseballr")
+
+# db <- dbConnect(SQLite(), "statcast_db.sqlite")
+# dbListTables(db)
+# sc <- dbGetQuery(db, "select * from statcast_data")
+# dbDisconnect(db)
+
+#Obtain data for MLB season 2021
+data <- read.csv("C:/Users/12244/CSV_2021/sc.csv")
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+#Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA values
+data_Ohtani <- data %>%
+  select(player_name, launch_speed, launch_angle) %>%
+  na.omit() %>%
+  filter(player_name == "Ohtani, Shohei")
+
+```
+
+```{r}
+
+data_Ohtani <- data_Ohtani %>%
+  mutate(group = case_when(launch_angle < -85 ~ "A",
+                           launch_angle >= -85 & launch_angle < -80 ~ "B",
+                           launch_angle >= -80 & launch_angle < -75 ~ "C",
+                           launch_angle >= -75 & launch_angle < -70 ~ "D",
+                           launch_angle >= -70 & launch_angle < -65 ~ "E",
+                           launch_angle >= -65 & launch_angle < -60 ~ "F",
+                           launch_angle >= -60 & launch_angle < -55 ~ "G",
+                           launch_angle >= -55 & launch_angle < -50 ~ "H",
+                           launch_angle >= -50 & launch_angle < -45 ~ "I",
+                           launch_angle >= -45 & launch_angle < -40 ~ "J",
+                           launch_angle >= -40 & launch_angle < -35 ~ "K",
+                           launch_angle >= -35 & launch_angle < -30 ~ "L",
+                           launch_angle >= -30 & launch_angle < -25 ~ "M",
+                           launch_angle >= -25 & launch_angle < -20 ~ "N",
+                           launch_angle >= -20 & launch_angle < -15 ~ "O",
+                           launch_angle >= -15 & launch_angle < -10 ~ "P",
+                           launch_angle >= -10 & launch_angle < -5 ~ "Q",
+                           launch_angle >= -5 & launch_angle < 0 ~ "R",
+                           launch_angle >= 0 & launch_angle < 5 ~ "S",
+                           launch_angle >= 5 & launch_angle < 10 ~ "T",
+                           launch_angle >= 10 & launch_angle < 15 ~ "U",
+                           launch_angle >= 15 & launch_angle < 20 ~ "V",
+                           launch_angle >= 20 & launch_angle < 25 ~ "W",
+                           launch_angle >= 25 & launch_angle < 30 ~ "X",
+                           launch_angle >= 30 & launch_angle < 35 ~ "Y",
+                           launch_angle >= 35 & launch_angle < 40 ~ "Z",
+                           launch_angle >= 40 & launch_angle < 45 ~ "AA",
+                           launch_angle >= 45 & launch_angle < 50 ~ "AB",
+                           launch_angle >= 50 & launch_angle < 55 ~ "AC",
+                           launch_angle >= 55 & launch_angle < 60 ~ "AD",
+                           launch_angle >= 60 & launch_angle < 65 ~ "AE",
+                           launch_angle >= 65 & launch_angle < 70 ~ "AF",
+                           launch_angle >= 70 & launch_angle < 75 ~ "AG",
+                           launch_angle >= 75 & launch_angle < 80 ~ "AH",
+                           launch_angle >= 80 & launch_angle < 85 ~ "AI",
+                           launch_angle >= 85 & launch_angle < 90 ~ "AJ",
+                           launch_angle >= 90 & launch_angle < 95 ~ "AK"
+                           ))
+
+
+top_10_data <- data_Ohtani %>%
+  group_by(group) %>%
+  slice_max(order_by = launch_speed, n = 5) %>%
+  mutate(top_10 = "Yes")
+
+data2 <- left_join(data_Ohtani, top_10_data, by = c("player_name", "launch_speed", "launch_angle", "group"))
+
+data2 <- data2 %>%
+  mutate(top_10 = ifelse(is.na(top_10), "No", top_10)) %>%
+  filter(launch_angle > -40)
+
+fit <- lm(launch_speed ~ launch_angle, top_10_data)
+
+ggplot(data2) + geom_point(aes(launch_angle, launch_speed, color = top_10)) + scale_color_manual(values = c("red", "blue")) + stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_10_data, aes(launch_angle, launch_speed), color = "black", se = FALSE)
+```
+
+
+
+
+
+
+
+```{r}
+
+ggplot(data %>% filter(player_name == "Oliva, Jared")) + geom_point(aes(launch_angle, launch_speed)) + ggtitle(paste("Exit Velocity vs Launch Angle of", "Olivia, Jared")) + xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)")
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
