@@ -1,20 +1,18 @@
 ---
-title: "LA_vs_EV"
+title: "Relationship between Launch Angle and Exit Velocity"
 output: html_document
-date: "2022-07-23"
+date: "2022-07-24"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
 ```
 
-## R Markdown
+## Launch Angle VS Exit Velocity of MLB Batters
+This document analyzes the relationship between launch angle and exit velocity of MLB batters during the 2021 season. 
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r Setting up}
+```{r setting up}
 #import libraries
 library(DBI)
 library(RSQLite)
@@ -34,22 +32,19 @@ data <- read.csv("C:/Users/12244/CSV_2021/sc.csv")
 
 ```
 
-## Including Plots
+## Main Function
+```{r function}
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-#Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA values
-data_Ohtani <- data %>%
+#Function for plotting Exit Velocity vs Launch Angle
+plot_ev_vs_la <- function(batter) {
+  #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
+  data_batter <- data %>%
   select(player_name, launch_speed, launch_angle) %>%
   na.omit() %>%
-  filter(player_name == "Ohtani, Shohei")
-
-```
-
-```{r}
-
-data_Ohtani <- data_Ohtani %>%
+  filter(player_name == batter)
+  
+  #Label data with launch angle for every bins of width 5 degrees
+  data_batter <- data_batter %>%
   mutate(group = case_when(launch_angle < -85 ~ "A",
                            launch_angle >= -85 & launch_angle < -80 ~ "B",
                            launch_angle >= -80 & launch_angle < -75 ~ "C",
@@ -88,33 +83,46 @@ data_Ohtani <- data_Ohtani %>%
                            launch_angle >= 85 & launch_angle < 90 ~ "AJ",
                            launch_angle >= 90 & launch_angle < 95 ~ "AK"
                            ))
-
-
-top_10_data <- data_Ohtani %>%
+  
+  #Create data set of top 10% exit velocity within each bins
+  top_10_data <- data_batter %>%
   group_by(group) %>%
   slice_max(order_by = launch_speed, n = 5) %>%
-  mutate(top_10 = "Yes")
-
-data2 <- left_join(data_Ohtani, top_10_data, by = c("player_name", "launch_speed", "launch_angle", "group"))
-
-data2 <- data2 %>%
-  mutate(top_10 = ifelse(is.na(top_10), "No", top_10)) %>%
+  mutate(top_10 = "Yes") %>%
   filter(launch_angle > -40)
 
-fit <- lm(launch_speed ~ launch_angle, top_10_data)
+  #Join two data
+  data2 <- left_join(data_batter, top_10_data, by = c("player_name", "launch_speed", "launch_angle", "group"))
 
-ggplot(data2) + geom_point(aes(launch_angle, launch_speed, color = top_10)) + scale_color_manual(values = c("red", "blue")) + stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_10_data, aes(launch_angle, launch_speed), color = "black", se = FALSE)
+  #Indicate whether or not the exit velocity is in top 10%
+  data2 <- data2 %>%
+  mutate(top_10 = ifelse(is.na(top_10), "No", top_10)) %>%
+  filter(launch_angle > -40, launch_speed > 50)
+
+  #Create a quadratic regression for top 10% data
+  top_10_data$launch_angle2 = top_10_data$launch_angle^2
+  quadratic_fit <- lm(launch_speed ~ launch_angle + launch_angle2, data = top_10_data)
+
+  #Scatter plot data differentiating the top 10% points by color and indicating the maximum predicted value for the launch angle that gives the max exit velocity using the quadratic regression
+  ggplot(data2) + 
+    geom_point(aes(launch_angle, launch_speed, color = top_10)) + 
+    scale_color_manual(values = c("red", "blue")) + 
+    stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_10_data, aes(launch_angle, launch_speed), color = "black", se = FALSE) + 
+    geom_vline(aes(xintercept = top_10_data$launch_angle[which.max(predict(quadratic_fit))]), linetype = "dashed") + 
+    ggtitle(paste("Exit Velocity vs Launch Angle of", batter)) + 
+    scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-40, 80, by = 10)) + 
+    scale_y_continuous(name = "Exit Velocity (mph)", breaks = seq(50, 120, by = 20)) + 
+    annotate(geom = "text", label = top_10_data$launch_angle[which.max(predict(quadratic_fit))], x = top_10_data$launch_angle[which.max(predict(quadratic_fit))], y = 50, vjust = 1)
+}
+
+
 ```
 
+```{r run plot}
+#Run the plot
+plot_ev_vs_la("Ohtani, Shohei")
 
-
-
-
-
-
-```{r}
-
-ggplot(data %>% filter(player_name == "Oliva, Jared")) + geom_point(aes(launch_angle, launch_speed)) + ggtitle(paste("Exit Velocity vs Launch Angle of", "Olivia, Jared")) + xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)")
 ```
+
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
