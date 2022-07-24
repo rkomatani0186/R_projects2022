@@ -17,7 +17,7 @@ library(mgcv)
 
 #Obtain data for UIUC hitters
 con <- connect_db("uiuc")
-sc <- dbGetQuery(con, paste("select * from fs_pitches where season = 2021"))
+sc <- dbGetQuery(con, paste("select * from fs_pitches where season in (2020, 2021, 2022)"))
 dbDisconnect(con)
 
 

@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
 ```
 
 ```{r library}
@@ -16,16 +17,17 @@ library(ggplot2)
 
 ```
 
+## For UIUC Data:
 ```{r}
 #Obtain data from uiuc database
-con <- connect_db("uiuc")
-sc <- dbGetQuery(con, "select * from fs_pitches where season in (2020, 2021, 2022)")
-dbDisconnect(con)
+# con <- connect_db("uiuc")
+# sc <- dbGetQuery(con, "select * from fs_pitches where season in (2020, 2021, 2022)")
+# dbDisconnect(con)
 ```
 
 ```{r data}
 
-#Home plate is 17 inches wide, with ball 9 inches in circumference
+# Home plate is 17 inches wide, with ball 9 inches in circumference
 plate_width <- 17 + 2 * (9 / pi)
 bottom_edge <- 1.5
 top_edge <- 3.6
@@ -54,161 +56,165 @@ add_9_dividers <- function(plot) {
 ```{r split data}
 #Split data into 9 zones
 
-sc_c1 <- sc %>% 
-  filter(between(plate_x, - plate_width / 2 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12),
-         between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3 * 2, top_edge))
-  
-sc_c2 <- sc %>% 
-  filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2),
-         between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3 * 2, top_edge))
-
-sc_c3 <- sc %>% 
-  filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2, plate_width / 2 / 12),
-         between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3 * 2, top_edge))
-
-sc_c4 <- sc %>% 
-  filter(between(plate_x, - plate_width / 2 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12),
-         between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 3 * 2))
-
-sc_c5 <- sc %>% 
-  filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2),
-         between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 3 * 2))
-
-sc_c6 <- sc %>% 
-  filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2, plate_width / 2 / 12),
-         between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 3 * 2))
-
-sc_c7 <- sc %>%
-  filter(between(plate_x, - plate_width / 2 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12),
-         between(plate_z, bottom_edge, bottom_edge + (top_edge - bottom_edge) / 3))
-
-sc_c8 <- sc %>%
-  filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2),
-         between(plate_z, bottom_edge, bottom_edge + (top_edge - bottom_edge) / 3))
-
-sc_c9 <- sc %>%
-  filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2, plate_width / 2 / 12), 
-         between(plate_z, bottom_edge, bottom_edge + (top_edge - bottom_edge) / 3))
-
-
-# Include 4 outside corners
-  
-sc_c10.1 <- sc %>%
-  filter(between(plate_x, - 5 / 6 * plate_width / 12, - plate_width / 2 / 12),
-         between(plate_z, bottom_edge + (top_edge - bottom_edge) / 2, top_edge + (top_edge - bottom_edge) / 3))
-sc_c10.2 <- sc %>%
-  filter(between(plate_x, - plate_width / 2 / 12, 0),
-         between(plate_z, top_edge, top_edge + (top_edge - bottom_edge) / 3))
-sc_c10 <- bind_rows(sc_c10.1, sc_c10.2)
-
-sc_c11.1 <- sc %>%
-  filter(between(plate_x, 0, plate_width / 2 / 12),
-         between(plate_z, top_edge, top_edge + (top_edge - bottom_edge) / 3))
-sc_c11.2 <- sc %>%
-  filter(between(plate_x, plate_width / 2 / 12, 5 / 6 * plate_width / 12),
-         between(plate_z, bottom_edge + (top_edge - bottom_edge) / 2, top_edge + (top_edge - bottom_edge) / 3))
-sc_c11 <- bind_rows(sc_c11.1, sc_c11.2)
-
-sc_c12.1 <- sc %>%
-  filter(between(plate_x, - 5 / 6 * plate_width / 12, - plate_width / 2 / 12),
-         between(plate_z, bottom_edge - (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 2))
-sc_c12.2 <- sc %>%
-  filter(between(plate_x, - plate_width / 2 / 12, 0),
-         between(plate_z, bottom_edge - (top_edge - bottom_edge) / 3, bottom_edge))
-sc_c12 <- bind_rows(sc_c12.1, sc_c12.2)
-
-sc_c13.1 <- sc %>%
-  filter(between(plate_x, 0, plate_width / 2 / 12),
-         between(plate_z, bottom_edge - (top_edge - bottom_edge) / 3, bottom_edge))
-sc_c13.2 <- sc %>%
-  filter(between(plate_x, plate_width / 2 / 12, 5 / 6 * plate_width / 12),
-         between(plate_z, bottom_edge - (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 2))
-sc_c13 <- bind_rows(sc_c13.1, sc_c13.2)
-  
-```
-
-
-```{r batting average}
-#Obtain batting average
-b_avg <- function(data, player) {
-  data <- data %>% 
-    filter(batter_name == player,
-           play_result %in% c("Single", "Double", "Triple", "Home Run", "Error", 
-                              "Contact Out", "Swinging Strikeout", "Called Strikeout")) %>%
-    mutate(Hit = ifelse(play_result %in% c("Single", "Double", "Triple", "Home Run"), 1, 0))
-  summary_data <- data %>%
-    summarize(t_hits = sum(Hit),
-              AB = n(),
-              AVG = t_hits / AB)
-  return(summary_data$AVG)
-  
-}
+# sc_c1 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12),
+#          between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3 * 2, top_edge))
+# 
+# sc_c2 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2),
+#          between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3 * 2, top_edge))
+# 
+# sc_c3 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2, plate_width / 2 / 12),
+#          between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3 * 2, top_edge))
+# 
+# sc_c4 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12),
+#          between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 3 * 2))
+# 
+# sc_c5 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2),
+#          between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 3 * 2))
+# 
+# sc_c6 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2, plate_width / 2 / 12),
+#          between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 3 * 2))
+# 
+# sc_c7 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12),
+#          between(plate_z, bottom_edge, bottom_edge + (top_edge - bottom_edge) / 3))
+# 
+# sc_c8 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2),
+#          between(plate_z, bottom_edge, bottom_edge + (top_edge - bottom_edge) / 3))
+# 
+# sc_c9 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2, plate_width / 2 / 12),
+#          between(plate_z, bottom_edge, bottom_edge + (top_edge - bottom_edge) / 3))
+# 
+# 
+# # Include 4 outside corners
+#   
+# sc_c10.1 <- sc %>%
+#   filter(between(plate_x, - 5 / 6 * plate_width / 12, - plate_width / 2 / 12),
+#          between(plate_z, bottom_edge + (top_edge - bottom_edge) / 2, top_edge + (top_edge - bottom_edge) / 3))
+# sc_c10.2 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12, 0),
+#          between(plate_z, top_edge, top_edge + (top_edge - bottom_edge) / 3))
+# sc_c10 <- bind_rows(sc_c10.1, sc_c10.2)
+# 
+# sc_c11.1 <- sc %>%
+#   filter(between(plate_x, 0, plate_width / 2 / 12),
+#          between(plate_z, top_edge, top_edge + (top_edge - bottom_edge) / 3))
+# sc_c11.2 <- sc %>%
+#   filter(between(plate_x, plate_width / 2 / 12, 5 / 6 * plate_width / 12),
+#          between(plate_z, bottom_edge + (top_edge - bottom_edge) / 2, top_edge + (top_edge - bottom_edge) / 3))
+# sc_c11 <- bind_rows(sc_c11.1, sc_c11.2)
+# 
+# sc_c12.1 <- sc %>%
+#   filter(between(plate_x, - 5 / 6 * plate_width / 12, - plate_width / 2 / 12),
+#          between(plate_z, bottom_edge - (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 2))
+# sc_c12.2 <- sc %>%
+#   filter(between(plate_x, - plate_width / 2 / 12, 0),
+#          between(plate_z, bottom_edge - (top_edge - bottom_edge) / 3, bottom_edge))
+# sc_c12 <- bind_rows(sc_c12.1, sc_c12.2)
+# 
+# sc_c13.1 <- sc %>%
+#   filter(between(plate_x, 0, plate_width / 2 / 12),
+#          between(plate_z, bottom_edge - (top_edge - bottom_edge) / 3, bottom_edge))
+# sc_c13.2 <- sc %>%
+#   filter(between(plate_x, plate_width / 2 / 12, 5 / 6 * plate_width / 12),
+#          between(plate_z, bottom_edge - (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 2))
+# sc_c13 <- bind_rows(sc_c13.1, sc_c13.2)
+#   
+# ```
+# 
+# 
+# ```{r batting average}
+# #Obtain batting average
+# b_avg <- function(data, player) {
+#   data <- data %>%
+#     filter(batter_name == player,
+#            play_result %in% c("Single", "Double", "Triple", "Home Run", "Error",
+#                               "Contact Out", "Swinging Strikeout", "Called Strikeout")) %>%
+#     mutate(Hit = ifelse(play_result %in% c("Single", "Double", "Triple", "Home Run"), 1, 0))
+#   summary_data <- data %>%
+#     summarize(t_hits = sum(Hit),
+#               AB = n(),
+#               AVG = t_hits / AB)
+#   return(summary_data$AVG)
+# 
+# }
 
 ```
 
 
 ```{r organize data}
 #creating data for 9_dividers and 4 corners
-create_b_avg_data <- function(player) {
-  data_avg <- data.frame(AVG = c(b_avg(sc_c10, player), b_avg(sc_c11, player), b_avg(sc_c12, player), 
-                               b_avg(sc_c13, player), b_avg(sc_c1, player), b_avg(sc_c2, player), b_avg(sc_c3, player),
-                               b_avg(sc_c4, player), b_avg(sc_c5, player), b_avg(sc_c6, player),
-                               b_avg(sc_c7, player), b_avg(sc_c8, player), b_avg(sc_c9, player) 
-                               ),
-                       loc_x = c(- 5 / 12 * plate_width / 12, 5 / 12 * plate_width / 12, - 5 / 12 * plate_width / 12, 5 / 12 * plate_width / 12,
-                                 - plate_width / 2 / 12 + plate_width / 6 / 12, 0, plate_width / 2 / 12 - plate_width / 6 / 12, 
-                                 - plate_width / 2 / 12 + plate_width / 6 / 12, 0, plate_width / 2 / 12 - plate_width / 6 / 12, 
-                                 - plate_width / 2 / 12 + plate_width / 6 / 12, 0, plate_width / 2 / 12 - plate_width / 6 / 12
-                                 ),
-                                
-                       loc_y = c(top_edge - (top_edge - bottom_edge) / 12, top_edge - (top_edge - bottom_edge) / 12, bottom_edge + (top_edge - bottom_edge) / 12, bottom_edge + (top_edge - bottom_edge) / 12,
-                                 top_edge - (top_edge - bottom_edge) / 6, top_edge - (top_edge - bottom_edge) / 6, top_edge - (top_edge - bottom_edge) / 6,
-                                 (top_edge + bottom_edge) / 2, (top_edge + bottom_edge) / 2, (top_edge + bottom_edge) / 2, 
-                                 bottom_edge + (top_edge - bottom_edge) / 6, bottom_edge + (top_edge - bottom_edge) / 6, bottom_edge + (top_edge - bottom_edge) / 6),
-                       
-                       w = c(plate_width * 5 / 6 / 12, plate_width * 5 / 6 / 12, plate_width * 5 / 6 / 12, plate_width * 5 / 6 / 12,
-                             plate_width / 3 / 12, plate_width / 3 / 12, plate_width / 3 / 12,
-                             plate_width / 3 / 12, plate_width / 3 / 12, plate_width / 3 / 12,
-                             plate_width / 3 / 12, plate_width / 3 / 12, plate_width / 3 / 12
-                             ),
-                       h = c((top_edge - bottom_edge) * 5 / 6, (top_edge - bottom_edge) * 5 / 6, (top_edge - bottom_edge) * 5 / 6, (top_edge - bottom_edge) * 5 / 6,
-                             (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3,
-                             (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3,
-                             (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3
-                             ))
-                             
-  return(data_avg)
-}
+# create_b_avg_data <- function(player) {
+#   data_avg <- data.frame(AVG = c(b_avg(sc_c10, player), b_avg(sc_c11, player), b_avg(sc_c12, player),
+#                                b_avg(sc_c13, player), b_avg(sc_c1, player), b_avg(sc_c2, player), b_avg(sc_c3, player),
+#                                b_avg(sc_c4, player), b_avg(sc_c5, player), b_avg(sc_c6, player),
+#                                b_avg(sc_c7, player), b_avg(sc_c8, player), b_avg(sc_c9, player)
+#                                ),
+#                        loc_x = c(- 5 / 12 * plate_width / 12, 5 / 12 * plate_width / 12, - 5 / 12 * plate_width / 12, 5 / 12 * plate_width / 12,
+#                                  - plate_width / 2 / 12 + plate_width / 6 / 12, 0, plate_width / 2 / 12 - plate_width / 6 / 12,
+#                                  - plate_width / 2 / 12 + plate_width / 6 / 12, 0, plate_width / 2 / 12 - plate_width / 6 / 12,
+#                                  - plate_width / 2 / 12 + plate_width / 6 / 12, 0, plate_width / 2 / 12 - plate_width / 6 / 12
+#                                  ),
+# 
+#                        loc_y = c(top_edge - (top_edge - bottom_edge) / 12, top_edge - (top_edge - bottom_edge) / 12, bottom_edge + (top_edge - bottom_edge) / 12, bottom_edge + (top_edge - bottom_edge) / 12,
+#                                  top_edge - (top_edge - bottom_edge) / 6, top_edge - (top_edge - bottom_edge) / 6, top_edge - (top_edge - bottom_edge) / 6,
+#                                  (top_edge + bottom_edge) / 2, (top_edge + bottom_edge) / 2, (top_edge + bottom_edge) / 2,
+#                                  bottom_edge + (top_edge - bottom_edge) / 6, bottom_edge + (top_edge - bottom_edge) / 6, bottom_edge + (top_edge - bottom_edge) / 6),
+# 
+#                        w = c(plate_width * 5 / 6 / 12, plate_width * 5 / 6 / 12, plate_width * 5 / 6 / 12, plate_width * 5 / 6 / 12,
+#                              plate_width / 3 / 12, plate_width / 3 / 12, plate_width / 3 / 12,
+#                              plate_width / 3 / 12, plate_width / 3 / 12, plate_width / 3 / 12,
+#                              plate_width / 3 / 12, plate_width / 3 / 12, plate_width / 3 / 12
+#                              ),
+#                        h = c((top_edge - bottom_edge) * 5 / 6, (top_edge - bottom_edge) * 5 / 6, (top_edge - bottom_edge) * 5 / 6, (top_edge - bottom_edge) * 5 / 6,
+#                              (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3,
+#                              (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3,
+#                              (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3
+#                              ))
+# 
+#   return(data_avg)
+# }
 
 ```
 
 
 ```{r plot}
 #plotting 9_dividers and 4 corners
-plot_b_avg_data <- function(player) {
-  plot <- ggplot(create_b_avg_data(player), aes(loc_x, loc_y, width = w, height = h)) +
-                    geom_tile(aes(fill = AVG), colour = "grey") + scale_fill_gradient(low = "pink", high = "red") + 
-    geom_text(data = create_b_avg_data(player)[5:13,], aes(label = round(AVG, 3))) + 
-    annotate("text", label = round(b_avg(sc_c10, player), 3), x = - plate_width / 2 / 12, y = top_edge + (top_edge - bottom_edge) / 8) + 
-    annotate("text", label = round(b_avg(sc_c11, player), 3), x = plate_width / 2 / 12, y = top_edge + (top_edge - bottom_edge) / 8) +
-    annotate("text", label = round(b_avg(sc_c12, player), 3), x = - plate_width / 2 / 12, y = bottom_edge - (top_edge - bottom_edge) / 8) + 
-    annotate("text", label = round(b_avg(sc_c13, player), 3), x = plate_width / 2 / 12, y = bottom_edge - (top_edge - bottom_edge) / 8)
-  add_9_dividers(plot)
-}
-
-plot_b_avg_data("Justin Janas")
+# plot_b_avg_data <- function(player) {
+#   plot <- ggplot(create_b_avg_data(player), aes(loc_x, loc_y, width = w, height = h)) +
+#                     geom_tile(aes(fill = AVG), colour = "grey") + scale_fill_gradient(low = "pink", high = "red") +
+#     geom_text(data = create_b_avg_data(player)[5:13,], aes(label = round(AVG, 3))) +
+#     annotate("text", label = round(b_avg(sc_c10, player), 3), x = - plate_width / 2 / 12, y = top_edge + (top_edge - bottom_edge) / 8) +
+#     annotate("text", label = round(b_avg(sc_c11, player), 3), x = plate_width / 2 / 12, y = top_edge + (top_edge - bottom_edge) / 8) +
+#     annotate("text", label = round(b_avg(sc_c12, player), 3), x = - plate_width / 2 / 12, y = bottom_edge - (top_edge - bottom_edge) / 8) +
+#     annotate("text", label = round(b_avg(sc_c13, player), 3), x = plate_width / 2 / 12, y = bottom_edge - (top_edge - bottom_edge) / 8)
+#   add_9_dividers(plot)
+# }
+# 
+# plot_b_avg_data("Justin Janas")
 
 ```
 
-
+## For MLB 2021 Data:
 ```{r MLB data}
 #For MLB data
-db = dbConnect(SQLite(), "statcast_db.sqlite")
-dbListTables(db)
-HData <- dbGetQuery(db, "select * from statcast_data")
-dbDisconnect(db)
+# db = dbConnect(SQLite(), "statcast_db.sqlite")
+# dbListTables(db)
+# HData <- dbGetQuery(db, "select * from statcast_data")
+# dbDisconnect(db)
 
+HData <- read.csv("C:/Users/12244/CSV_2021/sc.csv")
+```
 
+**Split data into 9 zones**
+```{r}
 sc_c1 <- HData %>% 
   filter(between(plate_x, - plate_width / 2 / 12, - plate_width / 2 / 12 + plate_width / 3 / 12),
          between(plate_z, bottom_edge + (top_edge - bottom_edge) / 3 * 2, top_edge))
@@ -244,6 +250,8 @@ sc_c8 <- HData %>%
 sc_c9 <- HData %>%
   filter(between(plate_x, - plate_width / 2 / 12 + plate_width / 3 / 12 * 2, plate_width / 2 / 12), 
          between(plate_z, bottom_edge, bottom_edge + (top_edge - bottom_edge) / 3))
+
+# Include 4 outside corners
   
 sc_c10.1 <- HData %>%
   filter(between(plate_x, - 5 / 6 * plate_width / 12, - plate_width / 2 / 12),
@@ -277,7 +285,10 @@ sc_c13.2 <- HData %>%
          between(plate_z, bottom_edge - (top_edge - bottom_edge) / 3, bottom_edge + (top_edge - bottom_edge) / 2))
 sc_c13 <- bind_rows(sc_c13.1, sc_c13.2)
 
+```
 
+**Obtain batting average**
+```{r}
 b_avg2 <- function(data, player) {
   data <- data %>%
     filter(type == "X" | events == "strikeout",
@@ -290,7 +301,10 @@ b_avg2 <- function(data, player) {
                AVG = t_hits / AB)
    return(summary_data$AVG)
 }
+```
 
+**Creating data for 9_dividers and 4 corners**
+```{r}
 create_b_avg_data2 <- function(player) {
   data_avg <- data.frame(AVG = c(b_avg2(sc_c10, player), b_avg2(sc_c11, player), b_avg2(sc_c12, player), 
                                b_avg2(sc_c13, player), b_avg2(sc_c1, player), b_avg2(sc_c2, player), b_avg2(sc_c3, player),
@@ -321,8 +335,10 @@ create_b_avg_data2 <- function(player) {
                              
   return(data_avg)
 }
+```
 
-
+**Plotting 9 dividers and 4 corners**
+```{r}
 plot_b_avg_data2 <- function(player) {
   plot <- ggplot(create_b_avg_data2(player), aes(loc_x, loc_y, width = w, height = h)) +
                     geom_tile(aes(fill = AVG), colour = "grey") + scale_fill_gradient(low = "pink", high = "red") + 
