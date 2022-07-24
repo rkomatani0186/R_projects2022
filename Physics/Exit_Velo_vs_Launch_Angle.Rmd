@@ -2,6 +2,8 @@
 title: "Relationship between Launch Angle and Exit Velocity"
 output: html_document
 date: "2022-07-24"
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -20,6 +22,9 @@ library(baseballr)
 library(dplyr)
 library(ggplot2)
 library(plyr)
+library(gridExtra)
+library(ggpubr)
+
 #devtools::install_github("BillPetti/baseballr")
 
 # db <- dbConnect(SQLite(), "statcast_db.sqlite")
@@ -120,9 +125,14 @@ plot_ev_vs_la <- function(batter) {
 
 ```{r run plot}
 #Run the plot
-plot_ev_vs_la("Ohtani, Shohei")
+Ohtani_plot <- plot_ev_vs_la("Ohtani, Shohei")
 
+Stanton_plot <- plot_ev_vs_la("Stanton, Giancarlo")
+
+ggarrange(Ohtani_plot, Stanton_plot)
 ```
+
+
 
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
