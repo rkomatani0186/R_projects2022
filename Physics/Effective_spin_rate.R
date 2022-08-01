@@ -1,5 +1,6 @@
 #Effective spin
 library(dplyr)
+library(ggplot2)
 
 db <- connect_db("uiuc")
 data <- dbGetQuery(db, "select * from fs_pitches where season = 2021")
@@ -35,4 +36,19 @@ data <- data %>%
   S = 0.166 * log(0.336 / (0.336 - CL)),
   wT = 78.92 * S * vbar,
   spin_eff = wT / spin_rate)
+
+data2 <- data %>%
+  select(pitch_type, spin_rate, spin_eff) %>%
+  na.omit()
+
+data3 <- data2 %>%
+  group_by(pitch_type) %>%
+  summarize(spin_rate, spin_eff)
+
+
+ggplot(data3, aes(pitch_type, spin_eff, color = pitch_type)) + 
+  geom_boxplot() + ggtitle(label = "Spin Efficiency of different pitch types") + 
+  xlab("Pitch Type") + 
+  ylab("Spin Efficiency") +
+  ylim(c(0, 2))
 
