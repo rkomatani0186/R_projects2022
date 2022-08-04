@@ -131,6 +131,31 @@ sc_c13 <- bind_rows(sc_c13.1, sc_c13.2)
 
 ```
 
+
+```{r}
+trial <- sc_c6 %>%
+  filter(batter_name == "Branden Comia",
+         play_result %in% c("Single", "Double", "Triple", "Home Run", "Error",
+                              "Contact Out", "Swinging Strikeout", "Called Strikeout")) %>%
+  mutate(Base = case_when(play_result == "Single" ~ 1,
+                         play_result == "Double" ~ 2,
+                         play_result == "Triple" ~ 3,
+                         play_result == "Home Run" ~ 4,
+                         TRUE ~ 0
+                         )) 
+sum_trial <- trial %>%
+  summarize(t_Base = sum(Base),
+            AB = n(),
+            SLG = t_Base / AB)
+
+sum_trial$SLG
+
+```
+
+
+
+
+
 ```{r batting average}
 #Obtain batting average
 b_avg <- function(data, player) {
@@ -147,6 +172,27 @@ b_avg <- function(data, player) {
 
 }
 
+```
+
+```{r slugging percentage}
+#Obtain slugging percentage
+slg <- function(data, player) {
+  data <- data %>%
+  filter(batter_name == player,
+         play_result %in% c("Single", "Double", "Triple", "Home Run", "Error",
+                              "Contact Out", "Swinging Strikeout", "Called Strikeout")) %>%
+  mutate(Base = case_when(play_result == "Single" ~ 1,
+                         play_result == "Double" ~ 2,
+                         play_result == "Triple" ~ 3,
+                         play_result == "Home Run" ~ 4,
+                         TRUE ~ 0
+                         )) 
+  summary_data <- data %>%
+  summarize(t_Base = sum(Base),
+            AB = n(),
+            SLG = t_Base / AB)
+  return(summary_data$SLG)
+}
 ```
 
 
@@ -206,6 +252,43 @@ create_b_avg_data <- function(player) {
 
 ```
 
+
+```{r organize data slugging percentage}
+#creating data for 9_dividers and 4 corners for batting average
+create_slg_data <- function(player) {
+  data_slg <- data.frame(SLG = c(slg(sc_c10, player), slg(sc_c11, player), slg(sc_c12, player),
+                               slg(sc_c13, player), slg(sc_c1, player), slg(sc_c2, player), slg(sc_c3, player),
+                               slg(sc_c4, player), slg(sc_c5, player), slg(sc_c6, player),
+                               slg(sc_c7, player), slg(sc_c8, player), slg(sc_c9, player)
+                               ),
+                       loc_x = c(- 5 / 12 * plate_width / 12, 5 / 12 * plate_width / 12, - 5 / 12 * plate_width / 12, 5 / 12 * plate_width / 12,
+                                 - plate_width / 2 / 12 + plate_width / 6 / 12, 0, plate_width / 2 / 12 - plate_width / 6 / 12,
+                                 - plate_width / 2 / 12 + plate_width / 6 / 12, 0, plate_width / 2 / 12 - plate_width / 6 / 12,
+                                 - plate_width / 2 / 12 + plate_width / 6 / 12, 0, plate_width / 2 / 12 - plate_width / 6 / 12
+                                 ),
+
+                       loc_y = c(top_edge - (top_edge - bottom_edge) / 12, top_edge - (top_edge - bottom_edge) / 12, bottom_edge + (top_edge - bottom_edge) / 12, bottom_edge + (top_edge - bottom_edge) / 12,
+                                 top_edge - (top_edge - bottom_edge) / 6, top_edge - (top_edge - bottom_edge) / 6, top_edge - (top_edge - bottom_edge) / 6,
+                                 (top_edge + bottom_edge) / 2, (top_edge + bottom_edge) / 2, (top_edge + bottom_edge) / 2,
+                                 bottom_edge + (top_edge - bottom_edge) / 6, bottom_edge + (top_edge - bottom_edge) / 6, bottom_edge + (top_edge - bottom_edge) / 6),
+
+                       w = c(plate_width * 5 / 6 / 12, plate_width * 5 / 6 / 12, plate_width * 5 / 6 / 12, plate_width * 5 / 6 / 12,
+                             plate_width / 3 / 12, plate_width / 3 / 12, plate_width / 3 / 12,
+                             plate_width / 3 / 12, plate_width / 3 / 12, plate_width / 3 / 12,
+                             plate_width / 3 / 12, plate_width / 3 / 12, plate_width / 3 / 12
+                             ),
+                       h = c((top_edge - bottom_edge) * 5 / 6, (top_edge - bottom_edge) * 5 / 6, (top_edge - bottom_edge) * 5 / 6, (top_edge - bottom_edge) * 5 / 6,
+                             (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3,
+                             (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3,
+                             (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3, (top_edge - bottom_edge) / 3
+                             ))
+
+  return(data_slg)
+}
+
+```
+
+
 ```{r organize data on base percentage}
 #creating data for 9_dividers and 4 corners for on base percentage
 create_on_base_percent_data <- function(player) {
@@ -260,6 +343,23 @@ plot_b_avg_data("Branden Comia")
 ```
 
 ```{r plot}
+#plotting 9_dividers and 4 corners for slugging percentage
+plot_slg_data <- function(player) {
+  plot <- ggplot(create_slg_data(player), aes(loc_x, loc_y, width = w, height = h)) +
+                    geom_tile(aes(fill = SLG), colour = "grey") + scale_fill_gradient(low = "pink", high = "red") +
+    geom_text(data = create_slg_data(player)[5:13,], aes(label = round(SLG, 3))) +
+    annotate("text", label = round(slg(sc_c10, player), 3), x = - plate_width / 2 / 12, y = top_edge + (top_edge - bottom_edge) / 8) +
+    annotate("text", label = round(slg(sc_c11, player), 3), x = plate_width / 2 / 12, y = top_edge + (top_edge - bottom_edge) / 8) +
+    annotate("text", label = round(slg(sc_c12, player), 3), x = - plate_width / 2 / 12, y = bottom_edge - (top_edge - bottom_edge) / 8) +
+    annotate("text", label = round(slg(sc_c13, player), 3), x = plate_width / 2 / 12, y = bottom_edge - (top_edge - bottom_edge) / 8)
+  add_9_dividers(plot)
+}
+
+plot_slg_data("Branden Comia")
+
+```
+
+```{r plot}
 #plotting 9_dividers and 4 corners for on base percentage
 plot_on_base_percent_data <- function(player) {
   plot <- ggplot(create_on_base_percent_data(player), aes(loc_x, loc_y, width = w, height = h)) +
@@ -274,7 +374,12 @@ plot_on_base_percent_data <- function(player) {
 
 plot_on_base_percent_data("Branden Comia")
 
-ggarrange(plot_b_avg_data("Branden Comia"), plot_on_base_percent_data("Branden Comia"))
+```
+
+```{r plots}
+#plotting AVG, SLG, OBP
+ggarrange(plot_b_avg_data("Branden Comia"), plot_slg_data("Branden Comia"), plot_on_base_percent_data("Branden Comia"))
+
 
 ```
 
