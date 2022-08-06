@@ -38,14 +38,15 @@ data <- read.csv("C:/Users/12244/CSV_2021/sc.csv")
 ```
 
 ```{r}
-#Function for filtering data for players with 502 at bats or more
+#Function for filtering data for players with 1000 at bats or more
 filter_data <- function(data) {
   filtered_data <- data %>%
     group_by(player_name) %>%
-    summarize(AB = n()) %>%
-    filter(AB >= 502)
+    dplyr::summarize(AB = dplyr::n()) %>%
+    filter(AB >= 1000)
   return(filtered_data$player_name)
 }
+
 ```
 
 ```{r}
@@ -108,7 +109,7 @@ la_for_peak_ev <- function(batter) {
   top_5_data$launch_angle2 = top_5_data$launch_angle^2
   quadratic_fit <- lm(launch_speed ~ launch_angle + launch_angle2, data = top_5_data)
   
-  #return launch angle that gives the maximum exit velocity
+  #return launch angle that gives the max exit velocity and max exit velocity as a list
   return(list(top_5_data$launch_angle[which.max(predict(quadratic_fit))], max(predict(quadratic_fit))))
 }
 
@@ -120,23 +121,31 @@ la_for_peak_ev <- function(batter) {
 qualified_batters <- data %>%
   filter(player_name %in% filter_data(data))
 
-#Obtain data with batter name, launch angle that gives max exit velo, and max exit velo
-df <- data.frame(hitter = " ", launch_angle = 0, exit_velo = 0)
-
-for(batter in unique(qualified_batters$player_name)) {
+#Obtain data with batter name, launch angle that gives max exit velocity, and max exit velocity
+la_ev_batter <- function(data) {
+  df <- data.frame(hitter = " ", launch_angle = 0, exit_velo = 0)
+  for(batter in unique(data$player_name)) {
   new_df <- data.frame(hitter = batter, launch_angle = as.numeric(la_for_peak_ev(batter)[1]), exit_velo = as.numeric(la_for_peak_ev(batter)[2]))
   df <- rbind(df, new_df)
+  }
+  df <- df[-c(1), ]
+  return(df)
 }
 
-df <- df[-c(1), ]
+#Get data for qualified batters
+q_data <- la_ev_batter(qualified_batters)
+q_data <- q_data %>%
+  arrange(launch_angle)
 
-min_la_player <- df %>%
-  filter(launch_angle == min(df$launch_angle))
+#player with min launch angle
+min_la_player <- q_data %>%
+  filter(launch_angle == min(q_data$launch_angle))
 
 min_la_player
 
-max_la_player <- df %>%
-  filter(launch_angle == max(df$launch_angle))
+#player with max launch angle
+max_la_player <- q_data %>%
+  filter(launch_angle == max(q_data$launch_angle))
 
 max_la_player
 
@@ -145,7 +154,7 @@ max_la_player
 ## Main Function
 ```{r function}
 
-#Function for plotting Exit Velocity vs Launch Angle
+#Function for plotting Exit Velocity vs Launch Angle for a batter
 plot_ev_vs_la <- function(batter) {
   #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
   data_batter <- data %>%
@@ -241,6 +250,22 @@ Fletcher_plot <- plot_ev_vs_la("Fletcher, David")
 Rogers_plot <- plot_ev_vs_la("Rogers, Jake")
 
 ggarrange(Fletcher_plot, Rogers_plot)
+
+#Hitters with 3 lowest and 3 highest launch angle
+plot1 <- ggarrange(plot_ev_vs_la(q_data$hitter[1]), plot_ev_vs_la(q_data$hitter[2]), plot_ev_vs_la(q_data$hitter[3]),
+          plot_ev_vs_la(q_data$hitter[length(q_data$hitter)]), plot_ev_vs_la(q_data$hitter[length(q_data$hitter) - 1]), plot_ev_vs_la(q_data$hitter[length(q_data$hitter) - 2]), ncol = 3, nrow = 2)
+
+#Hitters with highest home runs
+plot2 <- ggarrange(plot_ev_vs_la("Perez, Salvador"), plot_ev_vs_la("Guerrero Jr., Vladimir"), plot_ev_vs_la("Ohtani, Shohei"), plot_ev_vs_la("Semien, Marcus"))
+plot2
+
+#Hitters with highest average
+plot3 <- ggarrange(plot_ev_vs_la("Turner, Trea"), plot_ev_vs_la("Gurriel, Yuli"), plot_ev_vs_la("Soto, Juan"), plot_ev_vs_la("Brantley, Michael"))
+plot3
+
+#Hitters with highest slug
+plot4 <- ggarrange(plot_ev_vs_la("Harper, Bryce"), plot_ev_vs_la("Tatis Jr., Fernando"), plot_ev_vs_la("Guerrero Jr., Vladimir"), plot_ev_vs_la("Ohtani, Shohei"))
+plot4
 
 ```
 
