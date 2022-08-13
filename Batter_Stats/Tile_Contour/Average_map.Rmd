@@ -473,7 +473,7 @@ sc_c13 <- bind_rows(sc_c13.1, sc_c13.2)
 ```{r}
 b_avg2 <- function(data, player) {
   data <- data %>%
-    filter(type == "X" | events == "strikeout",
+    filter(type == "X" | events %in% c("strikeout", "strikeout_double_play"),
            player_name == player) %>%
     mutate(Hit = ifelse(events %in% c("single",
                                     "double", "triple", "home_run"), 1, 0))
