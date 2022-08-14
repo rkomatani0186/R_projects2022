@@ -38,10 +38,9 @@ data <- read.csv("C:/Users/12244/CSV_2021/sc.csv")
 
 ```
 
+## 1 Exit Velocity vs Launch Angle
 ```{r}
 #Function for filtering data for players with balls in play with 200 balls in play or more
-unique(data$type)
-
 
 filter_data <- function(data) {
   filtered_data <- data %>%
@@ -54,213 +53,8 @@ filter_data <- function(data) {
 
 ```
 
-```{r}
-#Strike out versus launch angle
-strike_batters <- data %>%
-  filter(player_name %in% filter_data(data))
 
-
-get_strikeouts <- function(player, data) {
-  data <- data %>%
-    filter(type == "X" | events == "strikeout",
-           player_name == player) %>%
-    mutate(K = ifelse(events %in% c("strikeout", "strikeout_double_play"), 1, 0))
-   summary_data <- data %>%
-     dplyr::summarize(t_K = sum(K),
-               AB = n(),
-               Strikeouts = t_K / AB)
-   return(summary_data$Strikeouts)
-}
-
-#Obtain data with batter name, launch angle that gives max exit velocity, and strikeouts
-la_k_batter <- function(data) {
-  df <- data.frame(hitter = " ", launch_angle = 0, exit_velo = 0, strikeouts = 0)
-  for(batter in unique(data$player_name)) {
-  new_df <- data.frame(hitter = batter, launch_angle = as.numeric(la_for_peak_ev(batter)[1]), exit_velo = as.numeric(la_for_peak_ev(batter)[2]), strikeouts = get_strikeouts(batter, data))
-  df <- rbind(df, new_df)
-  }
-  df <- df[-c(1), ]
-  return(df)
-}
-
-k_data <- la_k_batter(strike_batters)
-
-ggplot(k_data, aes(launch_angle, strikeouts, label = hitter)) + geom_point() + geom_smooth() + geom_text_repel()
-```
-
-
-```{r}
-#Function to obtain the launch angle that gives the maximum exit velocity when using quadratic fit
-la_for_peak_ev <- function(batter) {
-  #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
-  data_batter <- data %>%
-  select(player_name, launch_speed, launch_angle) %>%
-  na.omit() %>%
-  filter(player_name == batter)
-  
-  #Label data with launch angle for every bins of width 5 degrees
-  data_batter <- data_batter %>%
-  mutate(group = case_when(launch_angle < -85 ~ "A",
-                           launch_angle >= -85 & launch_angle < -80 ~ "B",
-                           launch_angle >= -80 & launch_angle < -75 ~ "C",
-                           launch_angle >= -75 & launch_angle < -70 ~ "D",
-                           launch_angle >= -70 & launch_angle < -65 ~ "E",
-                           launch_angle >= -65 & launch_angle < -60 ~ "F",
-                           launch_angle >= -60 & launch_angle < -55 ~ "G",
-                           launch_angle >= -55 & launch_angle < -50 ~ "H",
-                           launch_angle >= -50 & launch_angle < -45 ~ "I",
-                           launch_angle >= -45 & launch_angle < -40 ~ "J",
-                           launch_angle >= -40 & launch_angle < -35 ~ "K",
-                           launch_angle >= -35 & launch_angle < -30 ~ "L",
-                           launch_angle >= -30 & launch_angle < -25 ~ "M",
-                           launch_angle >= -25 & launch_angle < -20 ~ "N",
-                           launch_angle >= -20 & launch_angle < -15 ~ "O",
-                           launch_angle >= -15 & launch_angle < -10 ~ "P",
-                           launch_angle >= -10 & launch_angle < -5 ~ "Q",
-                           launch_angle >= -5 & launch_angle < 0 ~ "R",
-                           launch_angle >= 0 & launch_angle < 5 ~ "S",
-                           launch_angle >= 5 & launch_angle < 10 ~ "T",
-                           launch_angle >= 10 & launch_angle < 15 ~ "U",
-                           launch_angle >= 15 & launch_angle < 20 ~ "V",
-                           launch_angle >= 20 & launch_angle < 25 ~ "W",
-                           launch_angle >= 25 & launch_angle < 30 ~ "X",
-                           launch_angle >= 30 & launch_angle < 35 ~ "Y",
-                           launch_angle >= 35 & launch_angle < 40 ~ "Z",
-                           launch_angle >= 40 & launch_angle < 45 ~ "AA",
-                           launch_angle >= 45 & launch_angle < 50 ~ "AB",
-                           launch_angle >= 50 & launch_angle < 55 ~ "AC",
-                           launch_angle >= 55 & launch_angle < 60 ~ "AD",
-                           launch_angle >= 60 & launch_angle < 65 ~ "AE",
-                           launch_angle >= 65 & launch_angle < 70 ~ "AF",
-                           launch_angle >= 70 & launch_angle < 75 ~ "AG",
-                           launch_angle >= 75 & launch_angle < 80 ~ "AH",
-                           launch_angle >= 80 & launch_angle < 85 ~ "AI",
-                           launch_angle >= 85 & launch_angle < 90 ~ "AJ",
-                           launch_angle >= 90 & launch_angle < 95 ~ "AK"
-                           ))
-  #Create data set of top 5 exit velocity within each bins
-  top_5_data <- data_batter %>%
-  group_by(group) %>%
-  slice_max(order_by = launch_speed, n = 5) %>%
-  mutate(top_5 = "Yes") %>%
-  filter(launch_angle > -40)
-  
-  #Create a quadratic regression for top 5 data
-  top_5_data$launch_angle2 = top_5_data$launch_angle^2
-  quadratic_fit <- lm(launch_speed ~ launch_angle + launch_angle2, data = top_5_data)
-  
-  #return launch angle that gives the max exit velocity and max exit velocity as a list
-  return(list(top_5_data$launch_angle[which.max(predict(quadratic_fit))], max(predict(quadratic_fit))))
-}
-
-```
-
-
-```{r}
-#Obtain data for batters with BIP >= 200
-qualified_batters <- data %>%
-  filter(player_name %in% filter_data(data)) %>%
-  filter(type == 'X')
-
-
-#Obtain total balls in play for a batter
-total_BIP <- function(naaaame, dataaaaa) {
-  h_data <- dataaaaa %>% 
-    filter(player_name == naaaame)
-  return(nrow(h_data))
-}
-
-#Obtain amount of Singles, Doubles, Triples, Home runs, average for balls in play, home run percentage for balls in play
-obtain_stats <- function(namae, dataa) {
-  h_data <- dataa %>%
-    filter(player_name == namae)
-  return(table(h_data$events))
-}
-
-
-single_data <- function(namae, dataa) {
-  h_data <- dataa %>%
-    filter(player_name == namae,
-           events == "single")
-  return(nrow(h_data))
-}
-
-home_run_data <- function(namae, dataa) {
-  h_data <- dataa %>%
-    filter(player_name == namae,
-           events == "home_run")
-  return(nrow(h_data))
-}
-
-double_data <- function(namae, dataa) {
-  h_data <- dataa %>%
-    filter(player_name == namae,
-           events == "double")
-  return(nrow(h_data))
-}
-
-triple_data <- function(namae, dataa) {
-  h_data <- dataa %>%
-    filter(player_name == namae,
-           events == "triple")
-  return(nrow(h_data))
-}
-
-```
-
-```{r}
-
-#Obtain data with batter name, launch angle that gives max exit velocity, and max exit velocity
-la_ev_batter <- function(data) {
-  df <- data.frame(hitter = " ", launch_angle = 0, exit_velo = 0, BIP = 0, single = 0, double = 0, triple = 0, home_run = 0)
-  for(batter in unique(data$player_name)) {
-  new_df <- data.frame(hitter = batter, launch_angle = as.numeric(la_for_peak_ev(batter)[1]), exit_velo = as.numeric(la_for_peak_ev(batter)[2]), BIP = total_BIP(batter, data), single = single_data(batter, data), double = double_data(batter, data), triple = triple_data(batter, data), home_run = home_run_data(batter, data))
-  df <- rbind(df, new_df)
-  }
-  df <- df[-c(1), ]
-  return(df)
-}
-
-#Get data for qualified batters
-q_data <- la_ev_batter(qualified_batters)
-q_data <- q_data %>%
-  arrange(launch_angle)
-
-q_df <- q_data %>%
-  mutate(batting_average_for_BIP = (single + double + triple + home_run) / BIP,
-         home_run_for_BIP = home_run / BIP,
-         slug_for_BIP = (single  + double * 2 + triple * 3 + home_run * 4) / BIP)
-
-#write.csv(q_df,"C:/Users/12244/R_projects2022/Physics/q_df.csv", row.names = FALSE)
-
-
-#player with min launch angle
-min_la_player <- q_data %>%
-  filter(launch_angle == min(q_data$launch_angle))
-
-min_la_player
-
-#player with max launch angle
-max_la_player <- q_data %>%
-  filter(launch_angle == max(q_data$launch_angle))
-
-max_la_player
-
-```
-
-```{r}
-min_max_data <- q_df %>%
-  arrange(-home_run_for_BIP) %>%
-  .[1:10, ]
-
-#Home run per balls in play versus launch angle of qualified batters
-ggplot(q_df, aes(launch_angle, home_run_for_BIP, label = hitter)) + geom_point() + geom_smooth() +
-  geom_label_repel()
-
-
-```
-
-## Main Function
+## Function for plotting exit velocity versus launch angle that gives the maximum exit velocity
 ```{r function}
 
 #Function for plotting Exit Velocity vs Launch Angle for a batter
@@ -346,17 +140,157 @@ plot_ev_vs_la <- function(batter) {
 
 ```
 
-```{r run plot}
-#Run the plot
-Ohtani_plot <- plot_ev_vs_la("Ohtani, Shohei")
-
-Stanton_plot <- plot_ev_vs_la("Stanton, Giancarlo")
-
-ggarrange(Ohtani_plot, Stanton_plot)
+```{r}
+#Function to obtain the launch angle that gives the maximum exit velocity when using quadratic fit
+la_for_peak_ev <- function(batter) {
+  #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
+  data_batter <- data %>%
+  select(player_name, launch_speed, launch_angle) %>%
+  na.omit() %>%
+  filter(player_name == batter)
+  
+  #Label data with launch angle for every bins of width 5 degrees
+  data_batter <- data_batter %>%
+  mutate(group = case_when(launch_angle < -85 ~ "A",
+                           launch_angle >= -85 & launch_angle < -80 ~ "B",
+                           launch_angle >= -80 & launch_angle < -75 ~ "C",
+                           launch_angle >= -75 & launch_angle < -70 ~ "D",
+                           launch_angle >= -70 & launch_angle < -65 ~ "E",
+                           launch_angle >= -65 & launch_angle < -60 ~ "F",
+                           launch_angle >= -60 & launch_angle < -55 ~ "G",
+                           launch_angle >= -55 & launch_angle < -50 ~ "H",
+                           launch_angle >= -50 & launch_angle < -45 ~ "I",
+                           launch_angle >= -45 & launch_angle < -40 ~ "J",
+                           launch_angle >= -40 & launch_angle < -35 ~ "K",
+                           launch_angle >= -35 & launch_angle < -30 ~ "L",
+                           launch_angle >= -30 & launch_angle < -25 ~ "M",
+                           launch_angle >= -25 & launch_angle < -20 ~ "N",
+                           launch_angle >= -20 & launch_angle < -15 ~ "O",
+                           launch_angle >= -15 & launch_angle < -10 ~ "P",
+                           launch_angle >= -10 & launch_angle < -5 ~ "Q",
+                           launch_angle >= -5 & launch_angle < 0 ~ "R",
+                           launch_angle >= 0 & launch_angle < 5 ~ "S",
+                           launch_angle >= 5 & launch_angle < 10 ~ "T",
+                           launch_angle >= 10 & launch_angle < 15 ~ "U",
+                           launch_angle >= 15 & launch_angle < 20 ~ "V",
+                           launch_angle >= 20 & launch_angle < 25 ~ "W",
+                           launch_angle >= 25 & launch_angle < 30 ~ "X",
+                           launch_angle >= 30 & launch_angle < 35 ~ "Y",
+                           launch_angle >= 35 & launch_angle < 40 ~ "Z",
+                           launch_angle >= 40 & launch_angle < 45 ~ "AA",
+                           launch_angle >= 45 & launch_angle < 50 ~ "AB",
+                           launch_angle >= 50 & launch_angle < 55 ~ "AC",
+                           launch_angle >= 55 & launch_angle < 60 ~ "AD",
+                           launch_angle >= 60 & launch_angle < 65 ~ "AE",
+                           launch_angle >= 65 & launch_angle < 70 ~ "AF",
+                           launch_angle >= 70 & launch_angle < 75 ~ "AG",
+                           launch_angle >= 75 & launch_angle < 80 ~ "AH",
+                           launch_angle >= 80 & launch_angle < 85 ~ "AI",
+                           launch_angle >= 85 & launch_angle < 90 ~ "AJ",
+                           launch_angle >= 90 & launch_angle < 95 ~ "AK"
+                           ))
+  #Create data set of top 5 exit velocity within each bins
+  top_5_data <- data_batter %>%
+  group_by(group) %>%
+  slice_max(order_by = launch_speed, n = 5) %>%
+  mutate(top_5 = "Yes") %>%
+  filter(launch_angle > -40)
+  
+  #Create a quadratic regression for top 5 data
+  top_5_data$launch_angle2 = top_5_data$launch_angle^2
+  quadratic_fit <- lm(launch_speed ~ launch_angle + launch_angle2, data = top_5_data)
+  
+  #return launch angle that gives the max exit velocity and max exit velocity as a list
+  return(list(top_5_data$launch_angle[which.max(predict(quadratic_fit))], max(predict(quadratic_fit))))
+}
 
 ```
-## Hitters with highest and lowest launch angles at which their maximum exit velocities are achieved
 
+
+```{r}
+#Obtain data for batters with BIP >= 200
+qualified_batters <- data %>%
+  filter(player_name %in% filter_data(data)) %>%
+  filter(type == 'X')
+
+#Obtain total balls in play for a batter
+total_BIP <- function(naaaame, dataaaaa) {
+  h_data <- dataaaaa %>% 
+    filter(player_name == naaaame)
+  return(nrow(h_data))
+}
+
+#Functions to obtain amount of Singles, Doubles, Triples, Home runs, average for balls in play, home run percentage for balls in play
+obtain_stats <- function(namae, dataa) {
+  h_data <- dataa %>%
+    filter(player_name == namae)
+  return(table(h_data$events))
+}
+
+single_data <- function(namae, dataa) {
+  h_data <- dataa %>%
+    filter(player_name == namae,
+           events == "single")
+  return(nrow(h_data))
+}
+
+home_run_data <- function(namae, dataa) {
+  h_data <- dataa %>%
+    filter(player_name == namae,
+           events == "home_run")
+  return(nrow(h_data))
+}
+
+double_data <- function(namae, dataa) {
+  h_data <- dataa %>%
+    filter(player_name == namae,
+           events == "double")
+  return(nrow(h_data))
+}
+
+triple_data <- function(namae, dataa) {
+  h_data <- dataa %>%
+    filter(player_name == namae,
+           events == "triple")
+  return(nrow(h_data))
+}
+
+```
+
+```{r}
+
+#Obtain data with batter name, launch angle that gives max exit velocity, and max exit velocity
+la_ev_batter <- function(data) {
+  df <- data.frame(hitter = " ", launch_angle = 0, exit_velo = 0, BIP = 0, single = 0, double = 0, triple = 0, home_run = 0)
+  for(batter in unique(data$player_name)) {
+  new_df <- data.frame(hitter = batter, launch_angle = as.numeric(la_for_peak_ev(batter)[1]), exit_velo = as.numeric(la_for_peak_ev(batter)[2]), BIP = total_BIP(batter, data), single = single_data(batter, data), double = double_data(batter, data), triple = triple_data(batter, data), home_run = home_run_data(batter, data))
+  df <- rbind(df, new_df)
+  }
+  df <- df[-c(1), ]
+  return(df)
+}
+
+#Get data for qualified batters
+q_data <- la_ev_batter(qualified_batters)
+q_data <- q_data %>%
+  arrange(launch_angle)
+
+#player with min launch angle
+min_la_player <- q_data %>%
+  filter(launch_angle == min(q_data$launch_angle))
+
+min_la_player
+
+#player with max launch angle
+max_la_player <- q_data %>%
+  filter(launch_angle == max(q_data$launch_angle))
+
+max_la_player
+
+```
+
+
+## Hitters with highest and lowest launch angles at which their maximum exit velocities are achieved
 ```{r}
 #Hitters with 3 lowest and 3 highest launch angle
 plot1 <- ggarrange(plot_ev_vs_la(q_data$hitter[1]), plot_ev_vs_la(q_data$hitter[2]), plot_ev_vs_la(q_data$hitter[3]),
@@ -366,7 +300,6 @@ plot1
 ```
 
 ## Comparing hitters with top home runs, batting average, and slugging percentage
-
 ```{r}
 #Hitters with highest home runs
 plot2 <- ggarrange(plot_ev_vs_la("Perez, Salvador"), plot_ev_vs_la("Guerrero Jr., Vladimir"), plot_ev_vs_la("Ohtani, Shohei"), plot_ev_vs_la("Semien, Marcus"), plot_ev_vs_la("Tatis Jr., Fernando"), plot_ev_vs_la("Judge, Aaron"), plot_ev_vs_la("Olson, Matt"), plot_ev_vs_la("Haniger, Mitch"), plot_ev_vs_la("Lowe, Brandon"), plot_ev_vs_la("Devers, Rafael"))
@@ -388,6 +321,8 @@ plot4
 
 ```
 
+
+## List of launch angles that gives maximum exit velocities for batters with high stats
 ```{r}
 #list of launch angles for hitters with high home runs
 la_top_hr_hitters <- c(unlist(la_for_peak_ev("Perez, Salvador")[1]), unlist(la_for_peak_ev("Guerrero Jr., Vladimir")[1]), unlist(la_for_peak_ev("Ohtani, Shohei")[1]), unlist(la_for_peak_ev("Semien, Marcus")[1]), unlist(la_for_peak_ev("Tatis Jr., Fernando")[1]), unlist(la_for_peak_ev("Judge, Aaron")[1]), unlist(la_for_peak_ev("Olson, Matt")[1]), unlist(la_for_peak_ev("Haniger, Mitch")[1]), unlist(la_for_peak_ev("Lowe, Brandon")[1]), unlist(la_for_peak_ev("Devers, Rafael")[1]))
@@ -415,6 +350,8 @@ sd(la_top_slg_hitters)
 
 ```
 
+
+## List of max exit velocities for players with high stats
 ```{r}
 #list of max exit velocities for hitters with high home runs
 ev_top_hr_hitters <- c(unlist(la_for_peak_ev("Perez, Salvador")[2]), unlist(la_for_peak_ev("Guerrero Jr., Vladimir")[2]), unlist(la_for_peak_ev("Ohtani, Shohei")[2]), unlist(la_for_peak_ev("Semien, Marcus")[2]), unlist(la_for_peak_ev("Tatis Jr., Fernando")[2]), unlist(la_for_peak_ev("Judge, Aaron")[2]), unlist(la_for_peak_ev("Olson, Matt")[2]), unlist(la_for_peak_ev("Haniger, Mitch")[2]), unlist(la_for_peak_ev("Lowe, Brandon")[2]), unlist(la_for_peak_ev("Devers, Rafael")[2]))
@@ -433,6 +370,69 @@ ev_top_slg_hitters <- c(unlist(la_for_peak_ev("Harper, Bryce")[2]), unlist(la_fo
 mean(ev_top_slg_hitters)
 summary(ev_top_slg_hitters)
 sd(ev_top_slg_hitters)
+```
+
+## 2 Dataset for Balls in Play
+
+```{r}
+
+#Get data for qualified batters
+q_df <- q_data %>%
+  mutate(batting_average_for_BIP = (single + double + triple + home_run) / BIP,
+         home_run_for_BIP = home_run / BIP,
+         slug_for_BIP = (single  + double * 2 + triple * 3 + home_run * 4) / BIP)
+
+#write.csv(q_df,"C:/Users/12244/R_projects2022/Physics/q_df.csv", row.names = FALSE)
+
+
+```
+
+```{r}
+#Plot home run per balls in play versus launch angle of qualified batters
+plot_hr <- ggplot(q_df, aes(launch_angle, home_run_for_BIP, label = hitter)) + geom_point() + geom_smooth() +
+  geom_label_repel()
+
+plot_hr
+
+```
+
+
+## 3 Relationship between launch angle and strikeout percentage
+```{r}
+#Filter data to batters with greater than or equal to 200 BIP
+strikeout_data <- data %>%
+  filter(player_name %in% filter_data(data))
+
+#Function for obtaining strikeout percentage for batters
+get_strikeouts <- function(player, data) {
+  data <- data %>%
+    filter(type == "X" | events == "strikeout",
+           player_name == player) %>%
+    mutate(K = ifelse(events %in% c("strikeout", "strikeout_double_play"), 1, 0))
+   summary_data <- data %>%
+     dplyr::summarize(t_K = sum(K),
+               AB = n(),
+               Strikeouts = t_K / AB)
+   return(summary_data$Strikeouts)
+}
+
+#Function to obtain data with batter name, launch angle that gives max exit velocity, and strikeout percentage
+la_k_batter <- function(data) {
+  df <- data.frame(hitter = " ", launch_angle = 0, exit_velo = 0, strikeouts = 0)
+  for(batter in unique(data$player_name)) {
+  new_df <- data.frame(hitter = batter, launch_angle = as.numeric(la_for_peak_ev(batter)[1]), exit_velo = as.numeric(la_for_peak_ev(batter)[2]), strikeouts = get_strikeouts(batter, data))
+  df <- rbind(df, new_df)
+  }
+  df <- df[-c(1), ]
+  return(df)
+}
+
+#Obtain data with batter name, launch angle that gives max exit velocity, and strikeout percentage
+k_data <- la_k_batter(strikeout_data)
+
+#Plot launch angle versus strikeout percentage
+k_plot <- ggplot(k_data, aes(launch_angle, strikeouts, label = hitter)) + geom_point() + geom_smooth() + geom_text_repel()
+k_plot
 ```
 
 
