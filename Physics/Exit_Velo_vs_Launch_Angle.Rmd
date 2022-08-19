@@ -141,6 +141,36 @@ plot_ev_vs_la <- function(batter) {
 ```
 
 ```{r}
+test_data <- data %>%
+  select(player_name, launch_speed, launch_angle) %>%
+  na.omit() %>%
+  filter(player_name == "Ohtani, Shohei") %>%
+  mutate(theta5 = 5 * round(launch_angle / 5, 0)) %>%
+  arrange(launch_angle)
+
+new_df <- data.frame(theta5 = 0, top_10_ev = 0)
+
+for (theta in unique(test_data$theta5)) {
+  n_data <- test_data %>% 
+    filter(theta5 == theta)
+  df <- data.frame(theta5 = theta, top_10_ev = quantile(n_data$launch_speed, seq(0, 1, 1/10))[10])
+  new_df <- rbind(new_df, df)
+}
+new_df <- new_df[-c(1),]
+
+test_data <- inner_join(test_data, new_df, by = "theta5")
+
+final_data <- test_data %>%
+  filter(launch_speed >= top_10_ev)
+
+
+```
+
+
+
+
+
+```{r}
 #Function to obtain the launch angle that gives the maximum exit velocity when using quadratic fit
 la_for_peak_ev <- function(batter) {
   #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
