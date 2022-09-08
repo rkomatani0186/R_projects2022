@@ -1,0 +1,122 @@
+---
+title: "Transverse Ball-Bat Collision"
+output: html_document
+date: "2022-08-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Constants
+
+```{r}
+#Constants:
+pitch_speed = 84.8 #mph
+descent_angle = 8.0 #degrees
+bat_speed = 73.0 #mph
+attack_angle = 12.0 #degrees
+pitch_spin = -2000 #rpm
+
+mball = 5.125 #oz
+mbat = 31.494 #oz
+rball = 1.452 #in
+rbat = 1.267 #in
+
+gamma = descent_angle * pi / 180 #rad
+psi = attack_angle * pi / 180 #rad
+
+
+mu = 0.5500
+alpha = 0.400
+mbateff_x = 7.817 #oz
+recoilx = 2 / 7 * mball / mbateff_x
+
+v0ball = pitch_speed * 5280 * 12 / 3600 #ft/s
+v0bat = bat_speed * 5280 * 12 / 3600 #ft/s
+mbateff_y = 23.172 #oz
+
+recoily = mball / mbateff_y
+
+ex = 0.300
+eT = (ex - recoilx) / (1 + recoilx)
+omegai = pitch_spin * pi / 30 #rad/s 
+
+```
+
+## Data
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+
+bat_ball <- function(offset) {
+  theta = asin(offset / (rball + rbat)) #rad
+  centerline_angle = theta * 180 / pi #degree
+  D = (rball + rbat) * sin(theta - psi) #inch
+  v0ball_perp = v0ball * cos(theta - gamma) #ft/s
+  v0bat_perp = v0bat * cos(theta - psi) #ft/s
+  ey = 0.58 - (v0ball_perp + v0bat_perp - 1055) / 14094
+  eA = (ey - recoily) / (1 + recoily)
+  v0ball_T = v0ball * sin(theta - gamma) #ft/s
+  v0bat_T = - v0bat * sin(theta - psi) #ft/s
+  
+  
+  mulim = 0.55
+    
+  vfball_perp = v0ball_perp * eA + v0bat_perp * (1 + eA) #ft/s
+  vfball_T = v0ball_T * (1 - alpha * eT) / (1 + alpha) + rball * omegai * alpha * (1 + eT) / (1 + alpha) + v0bat_T * alpha * (1 + eT) / (1 + alpha) #ft/s
+  
+  angle = atan(vfball_T / vfball_perp) + theta #rad
+  
+  launch_angle = angle * 180 / pi # degrees
+    
+  omegaf = omegai + (v0ball_T - vfball_T) / (alpha * rball) #rad / s
+  
+  exit_speed = sqrt(vfball_perp^2 + vfball_T^2) / (5280 * 12 / 3600) #mph
+  
+  exit_spin = omegaf * 30 / pi #rpm
+  
+  df <- data.frame(offset = offset,
+                   centerline_angle = centerline_angle,
+                   D = D,
+                   exit_speed = exit_speed,
+                   exit_spin = exit_spin,
+                   launch_angle = launch_angle,
+                   v0ball_perp = v0ball_perp,
+                   v0bat_perp = v0bat_perp,
+                   ey = ey,
+                   eA = eA,
+                   v0ball_T = v0ball_T,
+                   v0bat_T = v0bat_T,
+                   omegaf = omegaf,
+                   vfball_perp = vfball_perp,
+                   vfball_T = vfball_T,
+                   angle = angle)
+                   
+  return(df)
+}
+
+
+
+
+
+```
+
+```{r}
+
+columns <- c('offset', 'centerline_angle', 'D', 'exit_speed', 'exit_spin', 'launch_angle', 'v0ball_perp', 'v0bat_perp', 'ey', 'eA', 'v0ball_T', 'v0bat_T', 'omegaf', 'vfball_perp', 'vfball_T', 'angle')
+
+df <- data.frame(matrix(nrow = 0, ncol = length(columns)))
+
+colnames(df) = columns
+
+offset_values = seq(0, 2.60, by = 0.05)
+
+for (value in offset_values) {
+  new_df <- bat_ball(value)
+  df <- rbind(df, new_df)
+}
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

@@ -55,183 +55,105 @@ filter_data <- function(data) {
 
 
 ## Function for plotting exit velocity versus launch angle that gives the maximum exit velocity
-```{r function}
 
+```{r}
 #Function for plotting Exit Velocity vs Launch Angle for a batter
 plot_ev_vs_la <- function(batter) {
   #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
   data_batter <- data %>%
   select(player_name, launch_speed, launch_angle) %>%
   na.omit() %>%
-  filter(player_name == batter)
-  
   #Label data with launch angle for every bins of width 5 degrees
-  data_batter <- data_batter %>%
-  mutate(group = case_when(launch_angle < -85 ~ "A",
-                           launch_angle >= -85 & launch_angle < -80 ~ "B",
-                           launch_angle >= -80 & launch_angle < -75 ~ "C",
-                           launch_angle >= -75 & launch_angle < -70 ~ "D",
-                           launch_angle >= -70 & launch_angle < -65 ~ "E",
-                           launch_angle >= -65 & launch_angle < -60 ~ "F",
-                           launch_angle >= -60 & launch_angle < -55 ~ "G",
-                           launch_angle >= -55 & launch_angle < -50 ~ "H",
-                           launch_angle >= -50 & launch_angle < -45 ~ "I",
-                           launch_angle >= -45 & launch_angle < -40 ~ "J",
-                           launch_angle >= -40 & launch_angle < -35 ~ "K",
-                           launch_angle >= -35 & launch_angle < -30 ~ "L",
-                           launch_angle >= -30 & launch_angle < -25 ~ "M",
-                           launch_angle >= -25 & launch_angle < -20 ~ "N",
-                           launch_angle >= -20 & launch_angle < -15 ~ "O",
-                           launch_angle >= -15 & launch_angle < -10 ~ "P",
-                           launch_angle >= -10 & launch_angle < -5 ~ "Q",
-                           launch_angle >= -5 & launch_angle < 0 ~ "R",
-                           launch_angle >= 0 & launch_angle < 5 ~ "S",
-                           launch_angle >= 5 & launch_angle < 10 ~ "T",
-                           launch_angle >= 10 & launch_angle < 15 ~ "U",
-                           launch_angle >= 15 & launch_angle < 20 ~ "V",
-                           launch_angle >= 20 & launch_angle < 25 ~ "W",
-                           launch_angle >= 25 & launch_angle < 30 ~ "X",
-                           launch_angle >= 30 & launch_angle < 35 ~ "Y",
-                           launch_angle >= 35 & launch_angle < 40 ~ "Z",
-                           launch_angle >= 40 & launch_angle < 45 ~ "AA",
-                           launch_angle >= 45 & launch_angle < 50 ~ "AB",
-                           launch_angle >= 50 & launch_angle < 55 ~ "AC",
-                           launch_angle >= 55 & launch_angle < 60 ~ "AD",
-                           launch_angle >= 60 & launch_angle < 65 ~ "AE",
-                           launch_angle >= 65 & launch_angle < 70 ~ "AF",
-                           launch_angle >= 70 & launch_angle < 75 ~ "AG",
-                           launch_angle >= 75 & launch_angle < 80 ~ "AH",
-                           launch_angle >= 80 & launch_angle < 85 ~ "AI",
-                           launch_angle >= 85 & launch_angle < 90 ~ "AJ",
-                           launch_angle >= 90 & launch_angle < 95 ~ "AK"
-                           ))
+  filter(player_name == batter) %>%
+  mutate(theta5 = 5 * round(launch_angle / 5, 0)) %>%
+  arrange(launch_angle)
   
-  #Create data set of top 5 exit velocity within each bins
-  top_5_data <- data_batter %>%
-  group_by(group) %>%
-  slice_max(order_by = launch_speed, n = 5) %>%
-  mutate(top_5 = "Yes") %>%
-  filter(launch_angle > -40)
+  #Create data set of top 10 percent exit velocity within each bins
+  new_df <- data.frame(theta5 = 0, top_10_ev = 0)
+  
+  for (theta in unique(data_batter$theta5)) {
+    n_data <- data_batter %>% 
+      filter(theta5 == theta)
+    df <- data.frame(theta5 = theta, top_10_ev = quantile(n_data$launch_speed, seq(0, 1, 1/10))[10])
+    new_df <- rbind(new_df, df)
+  }
 
+  new_df <- new_df[-c(1),]
+  
+  data_batter <- inner_join(data_batter, new_df, by = "theta5")
+  
+  top_10_data <- data_batter %>%
+    filter(launch_speed >= top_10_ev,
+           launch_angle > -40) %>%
+    mutate(top_10 = "Yes")
+    
   #Join two data
-  data2 <- left_join(data_batter, top_5_data, by = c("player_name", "launch_speed", "launch_angle", "group"))
-
-  #Indicate whether or not the exit velocity is in top 5
-  data2 <- data2 %>%
-  mutate(top_5 = ifelse(is.na(top_5), "No", top_5)) %>%
-  filter(launch_angle > -40, launch_speed > 50)
-
-  #Create a quadratic regression for top 5 data
-  top_5_data$launch_angle2 = top_5_data$launch_angle^2
-  quadratic_fit <- lm(launch_speed ~ launch_angle + launch_angle2, data = top_5_data)
-
-  #Scatter plot data differentiating the top 5 points by color and indicating the maximum predicted value for the launch angle that gives the max exit velocity using the quadratic regression
-  ggplot(data2) + 
-    geom_point(aes(launch_angle, launch_speed, color = top_5)) + 
+  combined_data <- left_join(data_batter, top_10_data, by = c("player_name", "launch_speed", "launch_angle", "theta5"))
+  
+  #Indicate whether or not the exit velocity is in top 10 percent
+  combined_data <- combined_data %>%
+    mutate(top_10 = ifelse(is.na(top_10), "No", top_10)) %>%
+    filter(launch_angle > -40)
+  
+  #Create a quadratic regression for top 10 percent data
+  top_10_data$launch_angle2 = top_10_data$launch_angle^2
+  
+  quadratic_fit <- lm(launch_speed ~ launch_angle + launch_angle2, data = top_10_data)
+  
+  #Scatter plot data differentiating the top 10 percent points by color and indicating the maximum predicted value for the launch angle that gives the max exit velocity using the quadratic regression
+  ggplot(combined_data) + 
+    geom_point(aes(launch_angle, launch_speed, color = top_10)) + 
     scale_color_manual(values = c("red", "blue")) + 
-    stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_5_data, aes(launch_angle, launch_speed), color = "black", se = FALSE) + 
-    geom_vline(aes(xintercept = top_5_data$launch_angle[which.max(predict(quadratic_fit))]), linetype = "dashed") + 
+    stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_10_data, aes(launch_angle, launch_speed), color = "black", se = FALSE) + 
+    geom_vline(aes(xintercept = top_10_data$launch_angle[which.max(predict(quadratic_fit))]), linetype = "dashed") + 
     ggtitle(paste("Exit Velocity vs Launch Angle of", batter)) + 
     scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-40, 80, by = 10)) + 
     scale_y_continuous(name = "Exit Velocity (mph)", breaks = seq(50, 120, by = 20)) + 
-    annotate(geom = "text", label = top_5_data$launch_angle[which.max(predict(quadratic_fit))], x = top_5_data$launch_angle[which.max(predict(quadratic_fit))], y = 50, vjust = 1)
+    annotate(geom = "text", label = top_10_data$launch_angle[which.max(predict(quadratic_fit))], x = top_10_data$launch_angle[which.max(predict(quadratic_fit))], y = 50, vjust = 1)
 }
 
-
 ```
-
-```{r}
-test_data <- data %>%
-  select(player_name, launch_speed, launch_angle) %>%
-  na.omit() %>%
-  filter(player_name == "Ohtani, Shohei") %>%
-  mutate(theta5 = 5 * round(launch_angle / 5, 0)) %>%
-  arrange(launch_angle)
-
-new_df <- data.frame(theta5 = 0, top_10_ev = 0)
-
-for (theta in unique(test_data$theta5)) {
-  n_data <- test_data %>% 
-    filter(theta5 == theta)
-  df <- data.frame(theta5 = theta, top_10_ev = quantile(n_data$launch_speed, seq(0, 1, 1/10))[10])
-  new_df <- rbind(new_df, df)
-}
-new_df <- new_df[-c(1),]
-
-test_data <- inner_join(test_data, new_df, by = "theta5")
-
-final_data <- test_data %>%
-  filter(launch_speed >= top_10_ev)
-
-
-```
-
-
-
-
 
 ```{r}
 #Function to obtain the launch angle that gives the maximum exit velocity when using quadratic fit
 la_for_peak_ev <- function(batter) {
+  
   #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
-  data_batter <- data %>%
+  test_data <- data %>%
   select(player_name, launch_speed, launch_angle) %>%
   na.omit() %>%
-  filter(player_name == batter)
-  
+  filter(player_name == batter) %>%
+    
   #Label data with launch angle for every bins of width 5 degrees
-  data_batter <- data_batter %>%
-  mutate(group = case_when(launch_angle < -85 ~ "A",
-                           launch_angle >= -85 & launch_angle < -80 ~ "B",
-                           launch_angle >= -80 & launch_angle < -75 ~ "C",
-                           launch_angle >= -75 & launch_angle < -70 ~ "D",
-                           launch_angle >= -70 & launch_angle < -65 ~ "E",
-                           launch_angle >= -65 & launch_angle < -60 ~ "F",
-                           launch_angle >= -60 & launch_angle < -55 ~ "G",
-                           launch_angle >= -55 & launch_angle < -50 ~ "H",
-                           launch_angle >= -50 & launch_angle < -45 ~ "I",
-                           launch_angle >= -45 & launch_angle < -40 ~ "J",
-                           launch_angle >= -40 & launch_angle < -35 ~ "K",
-                           launch_angle >= -35 & launch_angle < -30 ~ "L",
-                           launch_angle >= -30 & launch_angle < -25 ~ "M",
-                           launch_angle >= -25 & launch_angle < -20 ~ "N",
-                           launch_angle >= -20 & launch_angle < -15 ~ "O",
-                           launch_angle >= -15 & launch_angle < -10 ~ "P",
-                           launch_angle >= -10 & launch_angle < -5 ~ "Q",
-                           launch_angle >= -5 & launch_angle < 0 ~ "R",
-                           launch_angle >= 0 & launch_angle < 5 ~ "S",
-                           launch_angle >= 5 & launch_angle < 10 ~ "T",
-                           launch_angle >= 10 & launch_angle < 15 ~ "U",
-                           launch_angle >= 15 & launch_angle < 20 ~ "V",
-                           launch_angle >= 20 & launch_angle < 25 ~ "W",
-                           launch_angle >= 25 & launch_angle < 30 ~ "X",
-                           launch_angle >= 30 & launch_angle < 35 ~ "Y",
-                           launch_angle >= 35 & launch_angle < 40 ~ "Z",
-                           launch_angle >= 40 & launch_angle < 45 ~ "AA",
-                           launch_angle >= 45 & launch_angle < 50 ~ "AB",
-                           launch_angle >= 50 & launch_angle < 55 ~ "AC",
-                           launch_angle >= 55 & launch_angle < 60 ~ "AD",
-                           launch_angle >= 60 & launch_angle < 65 ~ "AE",
-                           launch_angle >= 65 & launch_angle < 70 ~ "AF",
-                           launch_angle >= 70 & launch_angle < 75 ~ "AG",
-                           launch_angle >= 75 & launch_angle < 80 ~ "AH",
-                           launch_angle >= 80 & launch_angle < 85 ~ "AI",
-                           launch_angle >= 85 & launch_angle < 90 ~ "AJ",
-                           launch_angle >= 90 & launch_angle < 95 ~ "AK"
-                           ))
+  mutate(theta5 = 5 * round(launch_angle / 5, 0)) %>%
+  arrange(launch_angle)
+  
   #Create data set of top 5 exit velocity within each bins
-  top_5_data <- data_batter %>%
-  group_by(group) %>%
-  slice_max(order_by = launch_speed, n = 5) %>%
-  mutate(top_5 = "Yes") %>%
-  filter(launch_angle > -40)
+  new_df <- data.frame(theta5 = 0, top_10_ev = 0)
+
+  for (theta in unique(test_data$theta5)) {
+    n_data <- test_data %>% 
+      filter(theta5 == theta)
+    df <- data.frame(theta5 = theta, top_10_ev = quantile(n_data$launch_speed, seq(0, 1, 1/10))[10])
+    new_df <- rbind(new_df, df)
+  }
+
+  new_df <- new_df[-c(1),]
   
-  #Create a quadratic regression for top 5 data
-  top_5_data$launch_angle2 = top_5_data$launch_angle^2
-  quadratic_fit <- lm(launch_speed ~ launch_angle + launch_angle2, data = top_5_data)
+  test_data <- inner_join(test_data, new_df, by = "theta5")
+
+  top_10_data <- test_data %>%
+    filter(launch_speed >= top_10_ev,
+           launch_angle > -40) %>%
+    mutate(top_10 = "Yes")
   
+  #Create a quadratic regression for top 10 percent data
+  top_10_data$launch_angle2 = top_10_data$launch_angle^2
+  
+  quadratic_fit <- lm(launch_speed ~ launch_angle + launch_angle2, data = top_10_data)
+
   #return launch angle that gives the max exit velocity and max exit velocity as a list
-  return(list(top_5_data$launch_angle[which.max(predict(quadratic_fit))], max(predict(quadratic_fit))))
+  return(list(top_10_data$launch_angle[which.max(predict(quadratic_fit))], max(predict(quadratic_fit))))
 }
 
 ```
@@ -244,43 +166,43 @@ qualified_batters <- data %>%
   filter(type == 'X')
 
 #Obtain total balls in play for a batter
-total_BIP <- function(naaaame, dataaaaa) {
-  h_data <- dataaaaa %>% 
-    filter(player_name == naaaame)
+total_BIP <- function(name, data) {
+  h_data <- data %>% 
+    filter(player_name == name)
   return(nrow(h_data))
 }
 
 #Functions to obtain amount of Singles, Doubles, Triples, Home runs, average for balls in play, home run percentage for balls in play
-obtain_stats <- function(namae, dataa) {
-  h_data <- dataa %>%
-    filter(player_name == namae)
+obtain_stats <- function(name, data) {
+  h_data <- data %>%
+    filter(player_name == name)
   return(table(h_data$events))
 }
 
-single_data <- function(namae, dataa) {
-  h_data <- dataa %>%
-    filter(player_name == namae,
+single_data <- function(name, data) {
+  h_data <- data %>%
+    filter(player_name == name,
            events == "single")
   return(nrow(h_data))
 }
 
-home_run_data <- function(namae, dataa) {
-  h_data <- dataa %>%
-    filter(player_name == namae,
+home_run_data <- function(name, data) {
+  h_data <- data %>%
+    filter(player_name == name,
            events == "home_run")
   return(nrow(h_data))
 }
 
-double_data <- function(namae, dataa) {
-  h_data <- dataa %>%
-    filter(player_name == namae,
+double_data <- function(name, data) {
+  h_data <- data %>%
+    filter(player_name == name,
            events == "double")
   return(nrow(h_data))
 }
 
-triple_data <- function(namae, dataa) {
-  h_data <- dataa %>%
-    filter(player_name == namae,
+triple_data <- function(name, data) {
+  h_data <- data %>%
+    filter(player_name == name,
            events == "triple")
   return(nrow(h_data))
 }
@@ -328,8 +250,9 @@ plot1 <- ggarrange(plot_ev_vs_la(q_data$hitter[1]), plot_ev_vs_la(q_data$hitter[
 plot1
 
 ```
+Could visually see that hitters with high launch angles that maximizes their exit velocity have upper swing and hitters with low launch angles that maximizes their exit velocity have down swing.
 
-## Comparing hitters with top home runs, batting average, and slugging percentage
+## Comparing hitters with top home runs, batting average, and slugging percentage (Data taken from 2021 MLB Stats)
 ```{r}
 #Hitters with highest home runs
 plot2 <- ggarrange(plot_ev_vs_la("Perez, Salvador"), plot_ev_vs_la("Guerrero Jr., Vladimir"), plot_ev_vs_la("Ohtani, Shohei"), plot_ev_vs_la("Semien, Marcus"), plot_ev_vs_la("Tatis Jr., Fernando"), plot_ev_vs_la("Judge, Aaron"), plot_ev_vs_la("Olson, Matt"), plot_ev_vs_la("Haniger, Mitch"), plot_ev_vs_la("Lowe, Brandon"), plot_ev_vs_la("Devers, Rafael"))
@@ -379,6 +302,7 @@ summary(la_top_slg_hitters)
 sd(la_top_slg_hitters)
 
 ```
+Hitters with top home runs and slug tend to have higher launch angle that maximizes their exit velocity then hitters with high batting average.
 
 
 ## List of max exit velocities for players with high stats
@@ -401,11 +325,11 @@ mean(ev_top_slg_hitters)
 summary(ev_top_slg_hitters)
 sd(ev_top_slg_hitters)
 ```
+Hitters with top home runs and slug tend to have higher peak exit velocity then hitters with high batting average.
 
-## 2 Dataset for Balls in Play
+## 2 Relationship between Home Run Percentage and Launch Angle + Exit Velocity
 
 ```{r}
-
 #Get data for qualified batters
 q_df <- q_data %>%
   mutate(batting_average_for_BIP = (single + double + triple + home_run) / BIP,
@@ -420,12 +344,59 @@ q_df <- q_data %>%
 ```{r}
 #Plot home run per balls in play versus launch angle of qualified batters
 plot_hr <- ggplot(q_df, aes(launch_angle, home_run_for_BIP, label = hitter)) + geom_point() + geom_smooth() +
-  geom_label_repel()
+  geom_label_repel() + xlab("Launch Angle that Gives Maximum Exit Velocity") + ylab("Home Run Percentage for BIP")
 
 plot_hr
 
 ```
+```{r}
+#Home run percentage versus peak exit velocity
+plot_hr2 <- ggplot(q_df, aes(exit_velo, home_run_for_BIP, label = hitter)) + geom_point() + geom_smooth() + 
+  geom_label_repel() + xlab("Peak Exit Velocity") + ylab("Home Run Percentage for BIP")
 
+plot_hr2
+```
+
+## Creating a model for home run percentage using launch angle that maxmizes exit velocity and peak exit velocity
+```{r}
+#Make model for home run percentage using launch angle and exit velocity
+model <- lm(formula = home_run_for_BIP ~ launch_angle + exit_velo, data = q_df)
+summary(model)
+
+#Create dataframe for predicted and observed data
+data_mod <- data.frame(Predicted = predict(model),  
+                       Observed = q_df$home_run_for_BIP)
+#plot prediction and actual data
+plot_fit <- ggplot(data_mod, aes(Predicted, Observed)) + geom_point() + 
+  geom_abline(intercept = 0,
+              slope = 1,
+              color = "red",
+              size = 2)
+plot_fit
+```
+With a residual standard error of 0.01632, the model fits decent to the actual data.
+
+
+```{r}
+#Data with prediction for homerun for balls in play
+data_compare <- q_df %>%
+  mutate(predicted_hr_for_BIP = predict(model))
+
+#Set launch angle constant
+theta19 <- data_compare %>%
+  filter(launch_angle <= 20, launch_angle >= 18)
+
+plot_theta19 <- ggplot(theta19, aes(exit_velo, home_run_for_BIP)) + geom_point() + geom_point(aes(exit_velo, predicted_hr_for_BIP), color = "green")
+plot_theta19
+
+#Set exit velocity constant
+ev_105 <- data_compare %>%
+  filter(round(exit_velo) == 105)
+
+plot_ev_105 <- ggplot(ev_105, aes(launch_angle, home_run_for_BIP)) + geom_point() + geom_point(aes(launch_angle, predicted_hr_for_BIP), color = "green") 
+plot_ev_105
+```
+The predicted data which is represented by green dots are close to the average of the actual data.
 
 ## 3 Relationship between launch angle and strikeout percentage
 ```{r}
@@ -461,10 +432,10 @@ la_k_batter <- function(data) {
 k_data <- la_k_batter(strikeout_data)
 
 #Plot launch angle versus strikeout percentage
-k_plot <- ggplot(k_data, aes(launch_angle, strikeouts, label = hitter)) + geom_point() + geom_smooth() + geom_text_repel()
+k_plot <- ggplot(k_data, aes(launch_angle, strikeouts, label = hitter)) + geom_point() + geom_smooth() + geom_text_repel() + xlab("Launch Angle that Gives the Maximum Exit Velocity") + ylab("Strikeout Percentage")
 k_plot
 ```
-
+As seen by the plot above, the strikeout percentage increases gradually as the launch angle that gives the maximum exit velocity increases. Thus, players with leveled swing tend to have lower strikeout percentage than players with non-leveled swing.
 
 
 
