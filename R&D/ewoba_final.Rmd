@@ -64,12 +64,12 @@ data_inplay <- data_inplay %>%
 ## Adding Sprint Speed to Data
 ```{r}
 #Obtain sprint speed data from statcast
-data_sprint_2021 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2021.csv")
-data_sprint_2019 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2019.csv")
-data_sprint_2018 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2018.csv")
-data_sprint_2017 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2017.csv")
-data_sprint_2016 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2016.csv")
-data_sprint_2015 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2015.csv")
+data_sprint_2021 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_data/sprint_speed_2021.csv")
+data_sprint_2019 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_data/sprint_speed_2019.csv")
+data_sprint_2018 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_data/sprint_speed_2018.csv")
+data_sprint_2017 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_data/sprint_speed_2017.csv")
+data_sprint_2016 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_data/sprint_speed_2016.csv")
+data_sprint_2015 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_data/sprint_speed_2015.csv")
 
 # data_sprint <- rbind(data_sprint_2021, data_sprint_2019, data_sprint_2018, data_sprint_2017, data_sprint_2016, data_sprint_2015)
 
