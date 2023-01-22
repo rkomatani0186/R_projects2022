@@ -1,0 +1,406 @@
+---
+title: "Colin_stuff++"
+output: html_document
+date: "2022-10-24"
+---
+
+
+Note: 
+Using autopitchtype instead of taggedpitchtype
+Multiply left handed pitcher's horizontal break by -1
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries are below.
+
+```{r}
+library(RMySQL)
+library(tidyverse)
+library(illinibaseball)
+library(xgboost)
+library(ranger)
+library(caret)
+#library(ElemStatLearn)
+library(car)
+library(doParallel)
+library(foreach)
+library(iterators)
+
+```
+
+
+Pulling data.
+
+```{r}
+query = "SELECT * FROM tm_pitches
+         WHERE Season = 2023 OR Season = 2022
+         AND TaggedPitchType != 'Undefined';"
+con = connect_db("uiuc")
+pitches = dbGetQuery(con, query)
+dbDisconnect(con)
+#query = "SELECT * FROM reliableFS"
+query = "select * from fs_pitches where season in (2018, 2019, 2020, 2021)"
+con = connect_db("uiuc")
+pitches2 = dbGetQuery(con, query)
+dbDisconnect(con)
+```
+
+Variables that I will use.
+
+```{r}
+listOfRelevantVariables = c("PitcherThrows", "TaggedPitchType", "PitchCall", "Pitcher",
+                            "RelSpeed", "VertRelAngle", "HorzRelAngle", "SpinRate", "SpinAxis",
+                            "RelHeight", "RelSide", "Extension", "InducedVertBreak", "HorzBreak", 
+                            "PlateLocHeight", "PlateLocSide")
+variablesFromArticle = c("InducedVertBreak", "RelSpeed", "RelHeight", "RelSide", "SpinAxis",
+                         "HorzBreak", "SpinRate", "Extension", "TaggedPitchType",
+                         "PitchCall", "PlateLocHeight", "PlateLocSide")
+```
+
+Editing FlightScope data.
+
+```{r}
+unique(pitches2$PitchCall)
+
+
+```
+
+```{r}
+# inPlay = c("Contact Out", "Double", "Single", "Error", "Triple", "Home Run")
+# pitches2 = pitches2 %>% #editing FlightScope data to match Trackman
+#   mutate(PitchCall = str_replace_all(string = PitchCall,
+#                                      pattern = " ",
+#                                      repl = "")) %>%
+#   mutate(TaggedPitchType = ifelse(TaggedPitchType == "Fastball" | TaggedPitchType == "Four Seam Fastball",
+#                                   "Fastball",
+#                                   ifelse(TaggedPitchType == "Two Seam Fastball",
+#                                          "Sinker",
+#                                          TaggedPitchType))) %>%
+#   mutate(PitcherThrows = ifelse(PitcherThrows == "R", "Right", "Left")) %>%
+#   mutate(PitchCall = case_when(PitchCall == "Ball" | PitchCall == "Walk" ~ "BallCalled",
+#                                PitchCall == "Hit by Pitch" ~ "HitByPitch",
+#                                PitchCall %in% inPlay ~ "InPlay",
+#                                PitchCall == "Swinging Strike" | PitchCall == "Swinging Strikeout" ~ "StrikeSwinging",
+#                                PitchCall == "Called Strike" | PitchCall == "Called Strikeout" ~ "StrikCalled",
+#                                PitchCall == "Foul Ball" ~ "FoulBall"))
+# swings2 = pitches2 %>% #filtering FlightScope data for swings only
+#   filter(PitchCall == c("StrikeSwinging", "InPlay")) %>%
+#   select(listOfRelevantVariables)
+```
+
+
+
+```{r}
+
+
+
+inPlay = c("Contact Out", "Double", "Single", "Error", "Triple", "Home Run")
+pitches2 = pitches2 %>% #editing FlightScope data to match Trackman
+  mutate(PitchCall = str_replace_all(string = PitchCall,
+                                     pattern = " ",
+                                     repl = "")) %>%
+  mutate(TaggedPitchType = ifelse(TaggedPitchType == "Fastball" | TaggedPitchType == "Four Seam Fastball",
+                                  "Fastball",
+                                  ifelse(TaggedPitchType == "Two Seam Fastball",
+                                         "Sinker",
+                                         TaggedPitchType))) %>%
+  mutate(PitcherThrows = ifelse(PitcherThrows == "R", "Right", "Left")) %>%
+  mutate(PitchCall = case_when(PitchCall == "Ball" | PitchCall == "Walk" ~ "BallCalled",
+                               PitchCall == "Hit by Pitch" ~ "HitByPitch",
+                               PitchCall %in% inPlay ~ "InPlay",
+                               PitchCall == "Swinging Strike" | PitchCall == "Swinging Strikeout" ~ "StrikeSwinging",
+                               PitchCall == "Called Strike" | PitchCall == "Called Strikeout" ~ "StrikeCalled",
+                               PitchCall == "Foul Ball" ~ "FoulBall"))
+
+  swings2 = pitches2 %>% #filtering FlightScope data for swings only
+  filter(PitchCall == c("StrikeSwinging", "InPlay")) %>%
+  select(listOfRelevantVariables)
+```
+
+Filtering pitches to swings and combining FlightScope and Trackman data.
+
+```{r}
+swings = pitches %>%
+  filter(PitchCall == c("StrikeSwinging", "InPlay")) %>%
+  select(listOfRelevantVariables)
+#combining Trackman and Flightscope Data
+swings = rbind(swings, swings2) 
+#table(swings$TaggedPitchType)
+```
+
+Filtering to pitches that were not swings.
+
+```{r}
+nonswings = pitches %>%
+  filter(PitchCall != "StrikeSwinging" | PitchCall != "InPlay") %>%
+  select(listOfRelevantVariables)
+nonswings2 = pitches2 %>%
+  filter(PitchCall != "StrikeSwinging" | PitchCall != "InPlay") %>%
+  select(listOfRelevantVariables)
+nonswings = rbind(nonswings, nonswings2)
+```
+
+Filtering to fastball only and making testing/training data.
+
+```{r}
+#filtering to fastball swings
+fastballSwings = swings %>%
+  filter(TaggedPitchType == "Fastball") %>%
+  mutate(PitchCall = as.factor(PitchCall)) %>%
+  na.omit()
+#filtering to fastball without swings
+fastballNonswings = nonswings %>%
+  filter(TaggedPitchType == "Fastball") %>%
+  mutate(PitchCall = as.factor(PitchCall))
+#splitting into training and testing data
+fastballSwings$id = 1:nrow(fastballSwings)
+trainFastball = fastballSwings %>% dplyr::sample_frac(0.80)
+testFastball = dplyr::anti_join(fastballSwings, trainFastball, by = 'id')
+trainFastball = trainFastball %>% select(-c(id, TaggedPitchType))
+testFastball = testFastball %>% select(-c(id, TaggedPitchType))
+```
+
+
+
+```{r}
+# #filtering to fastball swings
+# fastballSwings2 = swings2 %>%
+#   filter(TaggedPitchType == "Fastball") %>%
+#   mutate(PitchCall = as.factor(PitchCall)) %>%
+#   na.omit()
+# 
+# 
+# #splitting into training and testing data
+# fastballSwings2$id = 1:nrow(fastballSwings2)
+# trainFastball2 = fastballSwings2 %>% dplyr::sample_frac(0.80)
+# testFastball2 = dplyr::anti_join(fastballSwings2, trainFastball2, by = 'id')
+# trainFastball2 = trainFastball2 %>% select(-c(id, TaggedPitchType))
+# testFastball2 = testFastball2 %>% select(-c(id, TaggedPitchType))
+
+
+
+```
+
+Testing random forest.
+
+```{r}
+#ntree: Number of trees to grow
+#mtry: Number of variables randomly sampled as candidates at each split
+#min.node.size: Minimum size (data points) of terminal nodes. Setting this number larger causes smaller trees to be grown (and thus take less time).
+#gini: splits nodes by choosing cut-points fully at random
+
+
+forestTrain = train(PitchCall ~ .- Pitcher - PitcherThrows,
+                    data = trainFastball,
+                    method = "ranger",
+                    tuneGrid = expand.grid(mtry = c(1, 3, 5),
+                                           min.node.size = c(1, 3, 5, 10),
+                                           splitrule = "gini"),
+                    trControl = trainControl(method = "cv",
+                                             number = 10),
+                    num.trees = 100,
+                    respect.unordered.factors = "partition")
+forestTrain$results #use mtry = 3, min.node.size = 3
+forestTrain$results[which.max(forestTrain$results$Accuracy), ]
+
+```
+
+```{r}
+
+# rangerMod = ranger(PitchCall ~ .,
+#                    data = trainFastball,
+#                    num.trees = 100,
+#                    mtry = 3,
+#                    min.node.size = 3,
+#                    classification = TRUE)
+# 
+# forestTest = predict(rangerMod, data = testFastball)
+# testingRanger = confusionMatrix(data = forestTest$predictions, reference = testFastball$PitchCall)
+# testingRanger$overall[1]
+```
+
+```{r}
+# trainFastball_data <- trainFastball %>%
+#   group_by(PitcherThrows) %>%
+#   summarize(RelSpeed = mean(RelSpeed),
+#             VertRelAngle = mean(VertRelAngle),
+#             HorzRelAngle = mean(HorzRelAngle),
+#             SpinRate = mean(SpinRate),
+#             SpinAxis = mean(SpinAxis),
+#             RelHeight = mean(RelHeight),
+#             RelSide = mean(RelSide),
+#             Extension = mean(Extension),
+#             InducedVertBreak = mean(InducedVertBreak),
+#             HorzBreak = mean(HorzBreak),
+#             PlateLocHeight = mean(PlateLocHeight),
+#             PlateLocSide = mean(PlateLocSide))
+# 
+# trainFastball_data
+
+```
+
+
+```{r}
+#filtering to fastball swings
+fastballSwings = swings %>%
+  filter(TaggedPitchType == "Fastball") %>%
+  mutate(PitchCall = as.factor(PitchCall)) %>%
+  na.omit()
+#filtering to fastball without swings
+fastballNonswings = nonswings %>%
+  filter(TaggedPitchType == "Fastball") %>%
+  mutate(PitchCall = as.factor(PitchCall))
+#splitting into training and testing data
+fastballSwings$id = 1:nrow(fastballSwings)
+trainFastball = fastballSwings %>% dplyr::sample_frac(0.80)
+testFastball = dplyr::anti_join(fastballSwings, trainFastball, by = 'id')
+trainFastball = trainFastball %>% select(-c(id, TaggedPitchType))
+testFastball = testFastball %>% select(-c(id, TaggedPitchType))
+```
+
+```{r}
+rangerLessVarsMod = ranger(PitchCall ~ . - PitcherThrows - Pitcher, #Pitcher Throws and RelSide are highly correlated
+                           data = trainFastball,
+                           num.trees = 100,
+                           mtry = 3,
+                           min.node.size = 5,
+                           classification = TRUE,
+                           importance = "impurity")
+#table(rangerMod$predictions)
+rangerLessVarsMod$variable.importance
+rangerLessVarsMod$confusion.matrix
+forestLessTest = predict(rangerLessVarsMod, data = testFastball)
+testingLessRanger = confusionMatrix(data = forestLessTest$predictions, reference = testFastball$PitchCall)
+testingLessRanger$overall[1]
+
+```
+
+
+```{r}
+rangerLessVarsMod2 = ranger(PitchCall ~ . - PitcherThrows - Pitcher, #Pitcher Throws and RelSide are highly correlated
+                           data = trainFastball2,
+                           num.trees = 100,
+                           mtry = 3,
+                           min.node.size = 5,
+                           classification = TRUE,
+                           importance = "impurity")
+
+
+#table(rangerMod$predictions)
+rangerLessVarsMod2$variable.importance
+rangerLessVarsMod2$confusion.matrix
+forestLessTest2 = predict(rangerLessVarsMod2, data = testFastball2)
+testingLessRanger2 = confusionMatrix(data = forestLessTest2$predictions, reference = testFastball2$PitchCall)
+testingLessRanger2$overall[1]
+
+
+```
+
+Simulation for min node size and mtry.
+
+```{r}
+nsim = 100
+nodeList = c(1, 2, 3, 4, 5, 6, 7, 10, 20)
+mtryList = seq(1, 13)
+# pMSqE = matrix(1,
+#                nrow = nsim,
+#                ncol = length(nodeList))
+pMSqE = array(rep(-1, 
+                  nsim * length(nodeList) * length(mtryList)), 
+              dim = c(nsim, 
+                      length(nodeList), 
+                      length(mtryList)))
+for (i in 1:nsim) {
+  for (j in 1:length(nodeList)) {
+    for (k in 1:length(mtryList)) {
+      fastballSwings$id = 1:nrow(fastballSwings)
+      trainFastball = fastballSwings %>% dplyr::sample_frac(0.80)
+      testFastball = dplyr::anti_join(fastballSwings, trainFastball, by = 'id')
+      trainFastball = trainFastball %>% select(-c(id, TaggedPitchType))
+      testFastball = testFastball %>% select(-c(id, TaggedPitchType))
+    
+      tempForestMod = ranger(PitchCall ~ .,
+                             data = trainFastball,
+                             num.trees = 100,
+                             mtry = mtryList[k],
+                             min.node.size = nodeList[j],
+                             classification = TRUE)
+    
+      forestTest = predict(tempForestMod, data = testFastball)
+      testingRanger = confusionMatrix(data = forestTest$predictions, reference = testFastball$PitchCall)
+      pMSqE[i, j, k] = testingRanger$overall[1]
+    }
+  }
+}
+averageMtryError = 1 - colMeans(colMeans(pMSqE))
+averageNodeError = 1 - rowMeans(colMeans(pMSqE))
+length(averageNodeError)
+length(nodeList)
+plot(averageMtryError ~ mtryList,
+     main = "A Plot of Simulation Error vs Mtry",
+     ylab = "Average Prediction Error",
+     xlab = "Number of Sampled Variables")
+plot(averageNodeError ~ nodeList,
+     main = "A Plot of Simulation Error vs Node Size",
+     ylab = "Average Prediction Error",
+     xlab = "Maximum Size of Terminal Nodes")
+```
+
+
+Testing correlation.
+
+```{r}
+round(cor(testFastball), 3)
+tempTestFastball = testFastball %>%
+  mutate(PitcherThrows = as.numeric(factor(PitcherThrows))) %>%
+  mutate(PitchCall = as.numeric(factor(PitchCall)))
+head(tempTestFastball)
+cor(tempTestFastball)
+```
+
+GLM binomial regression and VIF.
+
+```{r}
+glmFastballModel = glm(PitchCall ~ .,
+                       data = trainFastball,
+                       family = "binomial")
+round(summary(glmFastballModel)$coef, dig = 3)
+yhat = (glmFastballModel$fitted.values > 0.5)
+table(yhat, trainFastball$PitchCall)
+sum(diag(table(yhat, trainFastball$PitchCall))) / sum(table(yhat, trainFastball$PitchCall))
+vif(glmFastballModel)
+```
+
+XGBoost models.
+
+```{r}
+trainFastball = trainFastball %>%
+  mutate(PitchCall = as.numeric(factor(PitchCall)))
+testFastball = testFastball %>%
+  mutate(PitchCall = as.numeric(factor(PitchCall)))
+trainFastball_train_x = data.matrix(trainFastball[, -9])
+trainFastball_train_y = data.matrix(trainFastball[, 9]) - 1
+trainFastball_test_x = data.matrix(testFastball[, -9])
+trainFastball_test_y = data.matrix(testFastball[, 9]) - 1
+xgb_train = xgb.DMatrix(data = trainFastball_train_x, label = trainFastball_train_y)
+xgb_test = xgb.DMatrix(data = trainFastball_test_x, label = trainFastball_test_y)
+firstModel = xgboost(data = xgb_train,
+                     nround = 100,
+                     max_depth = 10,
+                     sampling_method = "gradient_based",
+                     #nthread = 10,
+                     objective = "binary:logistic",
+                     eta = 0.01)
+firstPredict = predict(firstModel, xgb_test)
+accuracy = 1 - mean(as.numeric(firstPredict > 0.5) != trainFastball_test_y)
+accuracy
+```
+
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

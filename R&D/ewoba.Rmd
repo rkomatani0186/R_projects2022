@@ -1,0 +1,404 @@
+---
+title: "ewoba"
+output: html_document
+date: "2022-11-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+## Expected Weighted On Base Average
+
+
+```{r}
+#Libraries needed
+library(tidyverse)
+library(mgcv)
+library(broom)
+library(ggplot2)
+library(ggpubr)
+library(Lahman)
+
+```
+
+
+```{r}
+#Obtain statcast data from 2015 - 2021, excluding 2020 because of COVID.
+data_2015 <- read_csv("C:/Users/12244/STAT430/statcast_data/2015.csv")
+data_2016 <- read_csv("C:/Users/12244/STAT430/statcast_data/2016.csv")
+data_2017 <- read_csv("C:/Users/12244/STAT430/statcast_data/2017.csv")
+data_2018 <- read_csv("C:/Users/12244/STAT430/statcast_data/2018.csv")
+data_2019 <- read_csv("C:/Users/12244/STAT430/statcast_data/2019.csv")
+data_2021 <- read_csv("C:/Users/12244/STAT430/statcast_data/2021.csv")
+
+data_tot <- rbind(data_2015, data_2016, data_2017, data_2018, data_2019, data_2021)
+
+#Filter data to in play data
+data_inplay <- data_tot %>%
+  filter(type == "X",
+        !(is.na(launch_speed)),
+        !(is.na(launch_angle)),
+        !(events %in% c("sac_bunt_double_play", "sac_bunt", "field_error", "game_advisory", "ejection")))
+
+```
+
+```{r}
+#Generate indicator for Single, Double, Triple, and HR
+data_inplay <- data_inplay %>%
+  mutate(Single = ifelse(events == "single", 1, 0),
+         Double = ifelse(events == "double", 1, 0),
+         Triple = ifelse(events == "triple", 1, 0),
+         HR = ifelse(events == "home_run", 1, 0),
+         NotH = ifelse(events %in% c("single", "double", "triple", "home_run"), 0, 1))
+
+#Generalized Additive Model for probability of Single, Double, Triple, and HR (Binary Model)
+bm_Single <- gam(Single ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay)
+bm_Double <- gam(Double ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay)
+bm_Triple <- gam(Triple ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay)
+bm_HR <- gam(HR ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay)
+bm_NotH <- gam(NotH ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay)
+
+
+#Add probability to data
+data_inplay$prob_Single <- predict(bm_Single, data_inplay, type = "response")
+data_inplay$prob_Double <- predict(bm_Double, data_inplay, type = "response")
+data_inplay$prob_Triple <- predict(bm_Triple, data_inplay, type = "response")
+data_inplay$prob_HR <- predict(bm_HR, data_inplay, type = "response")
+data_inplay$prob_NotH <- predict(bm_NotH, data_inplay, type = "response")
+
+
+```
+
+
+```{r}
+#Build expected woba using probability and woba factors for each events (single: 0.9, double: 1.25, triple: 1.6, home run: 2.0)
+data_inplay <- data_inplay %>%
+  mutate(sum_prob = prob_Single + prob_Double + prob_Triple + prob_HR + prob_NotH,
+         ewoba = (0 * prob_NotH + 0.9 * prob_Single + 1.25 * prob_Double + 1.6 * prob_Triple + 2.0 * prob_HR) / sum_prob)
+
+data_selected <- data_inplay %>%
+  select(launch_speed, launch_angle, Single, Double, Triple, HR, prob_Single, prob_Double, prob_Triple, prob_HR, prob_NotH, sum_prob, estimated_woba_using_speedangle, ewoba)
+```
+
+```{r}
+sqrt(mean((data_inplay$estimated_woba_using_speedangle - data_inplay$ewoba)^2)) #0.08834356
+sqrt(mean((data_inplay$estimated_woba_using_speedangle - data_inplay$woba_value)^2)) #0.4325781
+sqrt(mean((data_inplay$ewoba - data_inplay$woba_value)^2)) #0.4401896
+
+```
+```{r}
+sqrt(mean((data_inplay_ab60$estimated_woba_using_speedangle - data_inplay_ab60$ewoba)^2)) #0.08834356
+sqrt(mean((data_inplay_ab60$estimated_woba_using_speedangle - data_inplay_ab60$woba_value)^2)) #0.4325781
+sqrt(mean((data_inplay_ab60$ewoba - data_inplay_ab60$woba_value)^2)) #0.4401896
+
+```
+
+```{r}
+my_plot1 <- ggplot(data_inplay) + geom_point(aes(launch_angle, ewoba), color = "blue") + ylab("My xwoba")
+MLB_plot1 <- ggplot(data_inplay) + geom_point(aes(launch_angle, estimated_woba_using_speedangle), color = "blue") + ylab("MLB xwoba")
+woba_plot1 <- ggplot(data_inplay) + geom_point(aes(launch_angle, woba_value), color = "red")
+
+ggarrange(my_plot1, MLB_plot1, woba_plot1)
+
+
+```
+
+```{r}
+my_plot2 <- ggplot(data_inplay) + geom_point(aes(launch_speed, ewoba), color = "blue") + ylab("My xwoba")
+MLB_plot2 <- ggplot(data_inplay) + geom_point(aes(launch_speed, estimated_woba_using_speedangle), color = "blue") + ylab("MLB xwoba")
+woba_plot2 <- ggplot(data_inplay) + geom_point(aes(launch_speed, woba_value), color = "red")
+
+
+ggarrange(my_plot2, MLB_plot2, woba_plot2)
+
+
+```
+
+
+```{r}
+low_ev <- data_inplay %>%
+  filter(launch_speed < 10) %>%
+  select(launch_angle, launch_speed, events, prob_Single, prob_Double, prob_HR, prob_NotH, woba_value, estimated_woba_using_speedangle, ewoba)
+
+
+
+```
+
+
+```{r}
+bm_HR <- gam(HR ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay)
+ls_la_grid <- expand.grid(
+  launch_speed = seq(90, 115, length.out = 50),
+  launch_angle = seq(15, 45, length.out = 50))
+
+hats <- bm_HR %>%
+  augment(type.predict = "response", newdata = ls_la_grid)
+
+# hats$pred <- predict(bm_HR, hats, type = "response")
+
+odd_values <- seq(from = 0.1, to = 0.9, by = 0.2)
+
+hat_labels <- hats %>%
+  filter(round(launch_angle) == 30) %>%
+  group_by(hr_prob = round(.fitted, 1)) %>%
+  summarize(N = n(),
+            launch_speed = mean(launch_speed) + 1,
+            launch_angle = mean(launch_angle)) %>%
+  filter(as.character(hr_prob) %in% odd_values)
+
+HR_plot <- ggplot(hats, aes(launch_speed, launch_angle)) +
+  geom_tile(aes(fill = .fitted)) +
+  geom_contour(aes(z = .fitted), breaks = odd_values) +
+  geom_text(data = hat_labels, aes(label = hr_prob)) +
+  xlab("Exit Velocity (mph)") +
+  ylab("Lanuch angle (degrees") +
+  scale_fill_gradient("HR prob", low = "purple", high = "white")
+
+HR_plot
+```
+
+
+```{r}
+bm_Single <- gam(Single ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay)
+ls_la_grid_Single <- expand.grid(
+  launch_speed = seq(0, 115, length.out = 50),
+  launch_angle = seq(-70, 45, length.out = 50))
+
+hats_Single <- bm_Single %>%
+  augment(type.predict = "response", newdata = ls_la_grid_Single)
+
+# hats$pred <- predict(bm_HR, hats, type = "response")
+
+odd_values <- seq(from = 0.1, to = 0.9, by = 0.2)
+
+hat_labels_Single <- hats_Single %>%
+  filter(round(launch_angle) == 0) %>%
+  group_by(Single_prob = round(.fitted, 1)) %>%
+  summarize(N = n(),
+            launch_speed = mean(launch_speed) + 1,
+            launch_angle = mean(launch_angle))
+
+Single_plot <- ggplot(hats_Single, aes(launch_speed, launch_angle)) +
+  geom_tile(aes(fill = .fitted)) +
+  geom_contour(aes(z = .fitted), breaks = odd_values) +
+  geom_text(data = hat_labels_Single, aes(label = Single_prob)) +
+  xlab("Exit Velocity (mph)") +
+  ylab("Lanuch angle (degrees") +
+  scale_fill_gradient("Single prob", low = "purple", high = "white")
+Single_plot
+
+hat_labels_Single_sp <- hats_Single %>%
+  filter(round(launch_angle) == 0,
+         .fitted <= 0.3)
+
+```
+
+
+```{r}
+bm_Double <- gam(Double ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay)
+ls_la_grid_Double <- expand.grid(
+  launch_speed = seq(0, 115, length.out = 50),
+  launch_angle = seq(-70, 45, length.out = 50))
+
+hats_Double <- bm_Double %>%
+  augment(type.predict = "response", newdata = ls_la_grid_Double)
+
+# hats$pred <- predict(bm_HR, hats, type = "response")
+
+odd_values <- seq(from = 0.1, to = 0.9, by = 0.2)
+
+hat_labels_Single <- hats_Single %>%
+  filter(round(launch_angle) == 0) %>%
+  group_by(Single_prob = round(.fitted, 1)) %>%
+  summarize(N = n(),
+            launch_speed = mean(launch_speed) + 1,
+            launch_angle = mean(launch_angle))
+
+Single_plot <- ggplot(hats_Single, aes(launch_speed, launch_angle)) +
+  geom_tile(aes(fill = .fitted)) +
+  geom_contour(aes(z = .fitted), breaks = odd_values) +
+  geom_text(data = hat_labels_Single, aes(label = Single_prob)) +
+  xlab("Exit Velocity (mph)") +
+  ylab("Lanuch angle (degrees") +
+  scale_fill_gradient("Single prob", low = "purple", high = "white")
+Single_plot
+
+```
+
+
+```{r}
+compare_plot <- ggplot(data_inplay) + geom_point(aes(estimated_woba_using_speedangle , ewoba), color = "blue") + ylab("My xwoba") + xlab("MLB xwoba")
+
+compare_plot
+```
+
+```{r}
+my_woba <- ggplot(data_inplay)+
+  geom_point(aes(x = launch_angle, y = launch_speed, color = ewoba)) +
+  scale_colour_gradientn(colours = (rainbow(20)))+
+  xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)") + labs(title = "old ewoba")
+
+mlb_woba <- ggplot(data_inplay)+
+  geom_point(aes(x = launch_angle, y = launch_speed, color = estimated_woba_using_speedangle)) +
+  scale_colour_gradientn(colours = (rainbow(20)))+
+  xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)") + labs(colour = "ewoba", title = "mlb ewoba")
+
+ggarrange(my_woba, mlb_woba)
+```
+
+## Adding Sprint Speed to Data
+
+```{r}
+#Obtain sprint speed data from statcast
+data_sprint_2021 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2021.csv")
+data_sprint_2019 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2019.csv")
+data_sprint_2018 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2018.csv")
+data_sprint_2017 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2017.csv")
+data_sprint_2016 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2016.csv")
+data_sprint_2015 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2015.csv")
+
+data_sprint <- rbind(data_sprint_2021, data_sprint_2019, data_sprint_2018, data_sprint_2017, data_sprint_2016, data_sprint_2015)
+
+data_sprint <- data_sprint %>%
+  mutate(player_name = paste0(last_name, ", ", first_name))
+
+colnames(data_sprint)[colnames(data_sprint) == "year"] <- "game_year"
+
+data_sprint <- data_sprint %>%
+  select(player_name, game_year, hp_to_1b, sprint_speed)
+
+#Combine inplay data with sprint speed data
+data_inplay2 <- inner_join(data_inplay, data_sprint, by = c("game_year", "player_name"))
+
+```
+
+## Non Weakly Hit Data
+```{r}
+#Consider balls with exit velo >= 55 mph and launch angle >= -50 degrees non weakly hit balls
+data_inplay_a <- data_inplay2 %>%
+  filter(launch_speed >= 55 & launch_angle >= -50)
+
+#Generalized Additive Model for probability of Single, Double, Triple, and HR (Binary Model)
+bm_Single_a <- gam(Single ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay_a)
+bm_Double_a <- gam(Double ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay_a)
+bm_Triple_a <- gam(Triple ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay_a)
+bm_HR_a <- gam(HR ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay_a)
+bm_NotH_a <- gam(NotH ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay_a)
+
+#Add probabilities of each events to data
+data_inplay_a$prob_Single <- predict(bm_Single_a, data_inplay_a, type = "response")
+data_inplay_a$prob_Double <- predict(bm_Double_a, data_inplay_a, type = "response")
+data_inplay_a$prob_Triple <- predict(bm_Triple_a, data_inplay_a, type = "response")
+data_inplay_a$prob_HR <- predict(bm_HR_a, data_inplay_a, type = "response")
+data_inplay_a$prob_NotH <- predict(bm_NotH_a, data_inplay_a, type = "response")
+
+#ewoba = (woba factor for single * probability of single + woba factor for double * probability of double + etc) / sum of probabilities
+data_inplay_a <- data_inplay_a %>%
+  mutate(sum_prob = prob_Single + prob_Double + prob_Triple + prob_HR + prob_NotH,
+         ewoba = (0 * prob_NotH + 0.9 * prob_Single + 1.25 * prob_Double + 1.6 * prob_Triple + 2.0 * prob_HR) / sum_prob)
+
+#Plots to compare my woba with mlb woba
+# my_woba_a <- ggplot(data_inplay_a)+
+#   geom_point(aes(x = launch_angle, y = launch_speed, color = ewoba)) +
+#   scale_colour_gradientn(colours = (rainbow(20)))+
+#   xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)") + labs(title = "my_woba_a")
+
+# my_woba_fila60 <- ggplot(data_inplay %>% filter(launch_speed >= 60))+
+#   geom_point(aes(x = launch_angle, y = launch_speed, color = ewoba)) +
+#   scale_colour_gradientn(colours = (rainbow(20)))+
+#   xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)") + labs(title = "my_woba_fil_a60")
+# 
+# mlb_woba_fila60 <- ggplot(data_inplay %>% filter(launch_speed >= 60))+
+#   geom_point(aes(x = launch_angle, y = launch_speed, color = estimated_woba_using_speedangle)) +
+#   scale_colour_gradientn(colours = (rainbow(20)))+
+#   xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)") + labs(colour = "ewoba") + labs(title = "mlb_woba_fila60")
+
+# ggarrange(my_woba_a60, my_woba_fila60, mlb_woba_fila60)
+
+```
+
+
+```{r}
+data_inplay_b <- data_inplay2 %>%
+  filter(launch_speed < 55 | launch_angle < -50)
+
+bm_Single_b <- gam(Single ~ s(launch_speed, launch_angle, sprint_speed), family = binomial, data = data_inplay_b)
+bm_Double_b <- gam(Double ~ s(launch_speed, launch_angle, sprint_speed), family = binomial, data = data_inplay_b)
+bm_Triple_b <- gam(Triple ~ s(launch_speed, launch_angle, sprint_speed), family = binomial, data = data_inplay_b)
+bm_HR_b <- gam(HR ~ s(launch_speed, launch_angle, sprint_speed), family = binomial, data = data_inplay_b)
+bm_NotH_b <- gam(NotH ~ s(launch_speed, launch_angle, sprint_speed), family = binomial, data = data_inplay_b)
+
+#Add probability to data
+data_inplay_b$prob_Single <- predict(bm_Single_b, data_inplay_b, type = "response")
+data_inplay_b$prob_Double <- predict(bm_Double_b, data_inplay_b, type = "response")
+data_inplay_b$prob_Triple <- predict(bm_Triple_b, data_inplay_b, type = "response")
+data_inplay_b$prob_HR <- predict(bm_HR_b, data_inplay_b, type = "response")
+data_inplay_b$prob_NotH <- predict(bm_NotH_b, data_inplay_b, type = "response")
+
+data_inplay_b <- data_inplay_b %>%
+  mutate(sum_prob = prob_Single + prob_Double + prob_Triple + prob_HR + prob_NotH,
+         ewoba = (0 * prob_NotH + 0.9 * prob_Single + 1.25 * prob_Double + 1.6 * prob_Triple + 2.0 * prob_HR) / sum_prob)
+
+#Plots to compare my woba with mlb woba
+# my_woba_b <- ggplot(data_inplay_b)+
+#   geom_point(aes(x = launch_angle, y = launch_speed, color = ewoba)) +
+#   scale_colour_gradientn(colours = (rainbow(20)))+
+#   xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)")
+
+# my_woba_filb60 <- ggplot(data_inplay %>% filter(launch_speed < 60))+
+#   geom_point(aes(x = launch_angle, y = launch_speed, color = ewoba)) +
+#   scale_colour_gradientn(colours = (rainbow(20)))+
+#   xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)")
+# 
+# mlb_woba_filb60 <- ggplot(data_inplay %>% filter(launch_speed < 60))+
+#   geom_point(aes(x = launch_angle, y = launch_speed, color = estimated_woba_using_speedangle)) +
+#   scale_colour_gradientn(colours = (rainbow(20)))+
+#   xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)") + labs(colour = "ewoba")
+
+# ggarrange(my_woba_b60, my_woba_filb60, mlb_woba_filb60)
+```
+
+
+```{r}
+data_inplay_ab <- rbind(data_inplay_a, data_inplay_b)
+
+my_woba_ab <- ggplot(data_inplay_ab)+
+  geom_point(aes(x = launch_angle, y = launch_speed, color = ewoba)) +
+  scale_colour_gradientn(colours = (rainbow(20)))+
+  xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)") + labs(title = "new ewoba")
+
+mlb_woba <- ggplot(data_inplay_ab)+
+  geom_point(aes(x = launch_angle, y = launch_speed, color = estimated_woba_using_speedangle)) +
+  scale_colour_gradientn(colours = (rainbow(20)))+
+  xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)") + labs(colour = "ewoba", title = "mlb ewoba")
+
+
+ggarrange(my_woba_ab, mlb_woba)
+
+```
+
+```{r}
+#RMSE of my ewoba and mlb ewoba
+sqrt(mean((data_inplay_ab$estimated_woba_using_speedangle - data_inplay_ab$ewoba)^2)) #0.08624337
+
+#RMSE of my ewoba and actual woba
+sqrt(mean((data_inplay_ab$ewoba - data_inplay_ab$woba_value)^2)) #0.4334333
+
+#RMSE of mlb ewoba and actual woba
+sqrt(mean((data_inplay_ab$estimated_woba_using_speedangle - data_inplay_ab$woba_value)^2)) #0.4275587
+
+```
+
+
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

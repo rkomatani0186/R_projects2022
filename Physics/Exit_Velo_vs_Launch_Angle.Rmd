@@ -57,7 +57,7 @@ filter_data <- function(data) {
 ## Function for plotting exit velocity versus launch angle that gives the maximum exit velocity
 
 ```{r}
-#Function for plotting Exit Velocity vs Launch Angle for a batter
+#Function for plotting Exit Velocity vs Launch Angle for all contacted balls for a batter
 plot_ev_vs_la <- function(batter) {
   #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
   data_batter <- data %>%
@@ -115,7 +115,7 @@ plot_ev_vs_la <- function(batter) {
 ```
 
 ```{r}
-#Function to obtain the launch angle that gives the maximum exit velocity when using quadratic fit
+#Function to obtain the launch angle that gives the maximum exit velocity when using quadratic fit for all contacted balls
 la_for_peak_ev <- function(batter) {
   
   #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
@@ -159,8 +159,9 @@ la_for_peak_ev <- function(batter) {
 ```
 
 
+## Computing data for balls in play (use qualified_batters for data)
 ```{r}
-#Obtain data for batters with BIP >= 200
+#Obtain data for batters with BIP >= 200, and filter data for only balls in play
 qualified_batters <- data %>%
   filter(player_name %in% filter_data(data)) %>%
   filter(type == 'X')
@@ -210,8 +211,14 @@ triple_data <- function(name, data) {
 ```
 
 ```{r}
+unique(data$description)
 
-#Obtain data with batter name, launch angle that gives max exit velocity, and max exit velocity
+
+```
+
+
+```{r}
+#Obtain data with batter name, launch angle that gives max exit velocity, and max exit velocity (This includes all contacted balls). 
 la_ev_batter <- function(data) {
   df <- data.frame(hitter = " ", launch_angle = 0, exit_velo = 0, BIP = 0, single = 0, double = 0, triple = 0, home_run = 0)
   for(batter in unique(data$player_name)) {
@@ -241,7 +248,7 @@ max_la_player
 
 ```
 
-
+# Analysis
 ## Hitters with highest and lowest launch angles at which their maximum exit velocities are achieved
 ```{r}
 #Hitters with 3 lowest and 3 highest launch angle
@@ -250,7 +257,7 @@ plot1 <- ggarrange(plot_ev_vs_la(q_data$hitter[1]), plot_ev_vs_la(q_data$hitter[
 plot1
 
 ```
-Could visually see that hitters with high launch angles that maximizes their exit velocity have upper swing and hitters with low launch angles that maximizes their exit velocity have down swing.
+**Could visually see that hitters with high launch angles that maximizes their exit velocity have upper swing and hitters with low launch angles that maximizes their exit velocity have down swing.**
 
 ## Comparing hitters with top home runs, batting average, and slugging percentage (Data taken from 2021 MLB Stats)
 ```{r}
@@ -302,7 +309,7 @@ summary(la_top_slg_hitters)
 sd(la_top_slg_hitters)
 
 ```
-Hitters with top home runs and slug tend to have higher launch angle that maximizes their exit velocity then hitters with high batting average.
+**Hitters with top home runs and slug tend to have higher launch angle that maximizes their exit velocity then hitters with high batting average.**
 
 
 ## List of max exit velocities for players with high stats
@@ -438,5 +445,167 @@ k_plot
 As seen by the plot above, the strikeout percentage increases gradually as the launch angle that gives the maximum exit velocity increases. Thus, players with leveled swing tend to have lower strikeout percentage than players with non-leveled swing.
 
 
+## Exit velocity / Max Exit Velocity vs Launch angle 
+```{r}
+h_data <- q_data
+colnames(h_data)[colnames(h_data) == "hitter"] <- "player_name"
+colnames(h_data)[colnames(h_data) == "exit_velo"] <- "max_ev"
+
+ev_data <- h_data %>%
+  select(player_name, max_ev)
+
+
+#Should I consider fouls when computing ev??????????????????????????????????????????
+
+new_data <- inner_join(data, ev_data, by = c("player_name"))
+new_data2 <- new_data %>%
+  select(player_name, max_ev, launch_angle, launch_speed, description, events) %>%
+  mutate(scaled_ev = launch_speed / max_ev) %>%
+  na.omit()
+  
+Ohtani_data <- new_data2 %>%
+  filter(player_name == "Ohtani, Shohei")
+ggplot(Ohtani_data, aes(launch_angle, scaled_ev)) + geom_point()
+
+
+```
+
+```{r}
+#Function for plotting Exit Velocity vs Launch Angle for a batter
+plot_scaled_ev_vs_la <- function(batter) {
+#Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value??????????????????????????????
+  data_batter <- new_data2 %>%
+  #Label data with launch angle for every bins of width 5 degrees
+    filter(player_name == batter) %>%
+    mutate(theta5 = 5 * round(launch_angle / 5, 0)) %>%
+    arrange(launch_angle)
+  
+  #Create data set of top 10 percent exit velocity within each bins
+  new_df <- data.frame(theta5 = 0, top_10_ev = 0)
+  
+  for (theta in unique(data_batter$theta5)) {
+    n_data <- data_batter %>% 
+      filter(theta5 == theta)
+    df <- data.frame(theta5 = theta, top_10_ev = quantile(n_data$scaled_ev, seq(0, 1, 1/10))[10])
+    new_df <- rbind(new_df, df)
+  }
+
+  new_df <- new_df[-c(1),]
+  
+  data_batter <- inner_join(data_batter, new_df, by = "theta5")
+  
+  top_10_data <- data_batter %>%
+    filter(scaled_ev >= top_10_ev,
+           launch_angle > -40) %>%
+    mutate(top_10 = "Yes")
+    
+  #Join two data
+  combined_data <- left_join(data_batter, top_10_data, by = c("player_name", "scaled_ev", "launch_speed", "launch_angle", "theta5", "description", "events", "top_10_ev", "max_ev"))
+  
+  #Indicate whether or not the exit velocity is in top 10 percent
+  combined_data <- combined_data %>%
+    mutate(top_10 = ifelse(is.na(top_10), "No", top_10)) %>%
+    filter(launch_angle > -40) %>%
+    mutate(events = ifelse(events == "", "foul", events))
+  
+  #Create a quadratic regression for top 10 percent data
+  top_10_data$launch_angle2 = top_10_data$launch_angle^2
+  
+  quadratic_fit <- lm(scaled_ev ~ launch_angle + launch_angle2, data = top_10_data)
+  
+  #Scatter plot data differentiating the top 10 percent points by color and indicating the maximum predicted value for the launch angle that gives the max exit velocity using the quadratic regression
+  #colors <- interaction(combined_data$top_10, combined_data$description)
+  ggplot(combined_data) + 
+    geom_point(aes(launch_angle, scaled_ev, color = interaction(top_10, description))) + 
+    scale_color_manual(values = c("pink", "skyblue", "red", "blue")) +
+    stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_10_data, aes(launch_angle, scaled_ev), color = "black", se = FALSE) + 
+    geom_vline(aes(xintercept = top_10_data$launch_angle[which.max(predict(quadratic_fit))]), linetype = "dashed") + 
+    ggtitle(paste("Exit Velocity vs Launch Angle of", batter)) + 
+    scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-40, 80, by = 10)) + 
+    scale_y_continuous(name = "Scaled Exit Velocity (mph)", breaks = seq(0.4, 1.2, by = 0.2)) + 
+    annotate(geom = "text", label = top_10_data$launch_angle[which.max(predict(quadratic_fit))], x = top_10_data$launch_angle[which.max(predict(quadratic_fit))], y = 1.2, vjust = 1)
+}
+```
+
+
+```{r}
+plot_scaled_ev_vs_la("Ohtani, Shohei")
+
+
+```
+
+
+```{r}
+plot_scaled_ev_vs_la("Ohtani, Shohei")
+
+#Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value??????????????????????????????
+  data_batter <- new_data2 %>%
+  #Label data with launch angle for every bins of width 5 degrees
+    filter(player_name == "Ohtani, Shohei") %>%
+    mutate(theta5 = 5 * round(launch_angle / 5, 0)) %>%
+    arrange(launch_angle)
+  
+  #Create data set of top 10 percent exit velocity within each bins
+  new_df <- data.frame(theta5 = 0, top_10_ev = 0)
+  
+  for (theta in unique(data_batter$theta5)) {
+    n_data <- data_batter %>% 
+      filter(theta5 == theta)
+    df <- data.frame(theta5 = theta, top_10_ev = quantile(n_data$scaled_ev, seq(0, 1, 1/10))[10])
+    new_df <- rbind(new_df, df)
+  }
+
+  new_df <- new_df[-c(1),]
+  
+  data_batter <- inner_join(data_batter, new_df, by = "theta5")
+  
+  top_10_data <- data_batter %>%
+    filter(scaled_ev >= top_10_ev,
+           launch_angle > -40) %>%
+    mutate(top_10 = "Yes")
+    
+  #Join two data
+  combined_data <- left_join(data_batter, top_10_data, by = c("player_name", "scaled_ev", "launch_speed", "launch_angle", "theta5", "description", "events", "top_10_ev", "max_ev"))
+  
+  #Indicate whether or not the exit velocity is in top 10 percent
+  combined_data <- combined_data %>%
+    mutate(top_10 = ifelse(is.na(top_10), "No", top_10)) %>%
+    filter(launch_angle > -40) %>%
+    mutate(events = ifelse(events == "", "foul", events))
+  
+  #Create a quadratic regression for top 10 percent data
+  top_10_data$launch_angle2 = top_10_data$launch_angle^2
+  
+  quadratic_fit <- lm(scaled_ev ~ launch_angle + launch_angle2, data = top_10_data)
+  
+  #Scatter plot data differentiating the top 10 percent points by color and indicating the maximum predicted value for the launch angle that gives the max exit velocity using the quadratic regression
+  #colors <- interaction(combined_data$top_10, combined_data$description)
+  ggplot(combined_data) + 
+    geom_point(aes(launch_angle, scaled_ev, color = interaction(top_10, description))) + 
+    scale_color_manual(values = c("pink", "skyblue", "red", "blue")) +
+    stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_10_data, aes(launch_angle, scaled_ev), color = "black", se = FALSE) + 
+    geom_vline(aes(xintercept = top_10_data$launch_angle[which.max(predict(quadratic_fit))]), linetype = "dashed") + 
+    ggtitle(paste("Exit Velocity vs Launch Angle of", "Shohei, Ohtani")) + 
+    scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-40, 80, by = 10)) + 
+    scale_y_continuous(name = "Scaled Exit Velocity (mph)", breaks = seq(0.4, 1.2, by = 0.2)) + 
+    annotate(geom = "text", label = top_10_data$launch_angle[which.max(predict(quadratic_fit))], x = top_10_data$launch_angle[which.max(predict(quadratic_fit))], y = 1.2, vjust = 1)
+  
+  
+
+```
+
+
+```{r}
+ggplot(combined_data) + 
+    geom_point(aes(launch_angle, scaled_ev, color = events)) + 
+    stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_10_data, aes(launch_angle, scaled_ev), color = "black", se = FALSE) + 
+    geom_vline(aes(xintercept = top_10_data$launch_angle[which.max(predict(quadratic_fit))]), linetype = "dashed") + 
+    ggtitle(paste("Exit Velocity vs Launch Angle of", "Shohei, Ohtani")) + 
+    scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-40, 80, by = 10)) + 
+    scale_y_continuous(name = "Scaled Exit Velocity (mph)", breaks = seq(0.4, 1.2, by = 0.2)) + 
+    annotate(geom = "text", label = top_10_data$launch_angle[which.max(predict(quadratic_fit))], x = top_10_data$launch_angle[which.max(predict(quadratic_fit))], y = 1.2, vjust = 1) 
+
+
+```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

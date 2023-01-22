@@ -8,6 +8,14 @@ date: "2022-08-22"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r}
+#Import packages
+library(ggplot2)
+library(dplyr)
+library(ggrepel)
+library(metR)
+```
+
 ## Constants
 
 ```{r}
@@ -46,10 +54,8 @@ omegai = pitch_spin * pi / 30 #rad/s
 
 ## Data
 
-You can also embed plots, for example:
-
 ```{r pressure, echo=FALSE}
-
+#Function for obtaining data with offset as input
 bat_ball <- function(offset) {
   theta = asin(offset / (rball + rbat)) #rad
   centerline_angle = theta * 180 / pi #degree
@@ -96,27 +102,283 @@ bat_ball <- function(offset) {
                    
   return(df)
 }
-
-
-
-
-
 ```
 
 ```{r}
-
+#Make new column with column names of data
 columns <- c('offset', 'centerline_angle', 'D', 'exit_speed', 'exit_spin', 'launch_angle', 'v0ball_perp', 'v0bat_perp', 'ey', 'eA', 'v0ball_T', 'v0bat_T', 'omegaf', 'vfball_perp', 'vfball_T', 'angle')
 
 df <- data.frame(matrix(nrow = 0, ncol = length(columns)))
 
 colnames(df) = columns
 
+#Offset values
 offset_values = seq(0, 2.60, by = 0.05)
 
+#Obtain data for every offset values
 for (value in offset_values) {
   new_df <- bat_ball(value)
   df <- rbind(df, new_df)
 }
 ```
 
+
+
+```{r}
+#Function for obtaining data with center line angle and attack angle as parameters
+get_data <- function(CA, AA) {
+  psi = AA * pi / 180 #rad
+  theta = CA / 180 * pi #rad
+  offset = sin(theta) * (rball + rbat) #inch
+  D = (rball + rbat) * sin(theta - psi) #inch
+  v0ball_perp = v0ball * cos(theta - gamma) #ft/s
+  v0bat_perp = v0bat * cos(theta - psi) #ft/s
+  ey = 0.58 - (v0ball_perp + v0bat_perp - 1055) / 14094
+  eA = (ey - recoily) / (1 + recoily)
+  v0ball_T = v0ball * sin(theta - gamma) #ft/s
+  v0bat_T = - v0bat * sin(theta - psi) #ft/s
+  
+  mulim = 0.55
+    
+  vfball_perp = v0ball_perp * eA + v0bat_perp * (1 + eA) #ft/s
+  vfball_T = v0ball_T * (1 - alpha * eT) / (1 + alpha) + rball * omegai * alpha * (1 + eT) / (1 + alpha) + v0bat_T * alpha * (1 + eT) / (1 + alpha) #ft/s
+  
+  angle = atan(vfball_T / vfball_perp) + theta #rad
+  
+  launch_angle = angle * 180 / pi # degrees
+    
+  omegaf = omegai + (v0ball_T - vfball_T) / (alpha * rball) #rad / s
+  
+  exit_speed = sqrt(vfball_perp^2 + vfball_T^2) / (5280 * 12 / 3600) #mph
+  
+  exit_spin = omegaf * 30 / pi #rpm
+  
+  df <- data.frame(AA = AA,
+                   CA = CA,
+                   offset = offset,
+                   D = D,
+                   exit_speed = exit_speed,
+                   exit_spin = exit_spin,
+                   launch_angle = launch_angle,
+                   v0ball_perp = v0ball_perp,
+                   v0bat_perp = v0bat_perp,
+                   ey = ey,
+                   eA = eA,
+                   v0ball_T = v0ball_T,
+                   v0bat_T = v0bat_T,
+                   omegaf = omegaf,
+                   vfball_perp = vfball_perp,
+                   vfball_T = vfball_T,
+                   angle = angle)
+  return(df)
+}
+
+get_data(3.16, 12)
+
+
+
+```
+
+```{r}
+#Make new column with column names of data
+columns_AA_CA <- c('AA', 'CA', 'offset', 'D', 'exit_speed', 'exit_spin', 'launch_angle', 'v0ball_perp', 'v0bat_perp', 'ey', 'eA', 'v0ball_T', 'v0bat_T', 'omegaf', 'vfball_perp', 'vfball_T', 'angle')
+
+data_AA_CA <- data.frame(matrix(nrow = 0, ncol = length(columns_AA_CA)))
+
+colnames(data_AA_CA) = columns_AA_CA
+
+
+#Offset values
+offset_AA = seq(-10, 50, by = 0.5)
+offset_CA = seq(-10, 40, by = 0.5)
+
+
+
+#Obtain data for every offset values
+for (AA in offset_AA) {
+  for (CA in offset_CA) {
+    new_data_AA_CA <- get_data(CA, AA)
+    data_AA_CA <- rbind(data_AA_CA, new_data_AA_CA)
+  }
+}
+
+
+```
+
+```{r}
+#Function to filter launch angle
+filter_data_LA <- function(LA) {
+  data_LA <- data_AA_CA %>%
+    filter(round(launch_angle) == LA)
+  return(data_LA)
+}
+
+length(filter_data_LA(0))
+filter_data_LA(0)
+filter_data_LA(0)[1, ]
+
+data_AA_CA <- data_AA_CA %>%
+  mutate(scaled_ev = exit_speed / max(data_AA_CA$exit_speed),
+         scaled_ev = round(scaled_ev, 4))
+```
+
+
+```{r, message = FALSE}
+ggplot(data_AA_CA, aes(CA, AA, z = exit_speed)) + geom_contour(binwidth = 1) +
+   geom_text_contour() + geom_abline(CA = AA) + 
+  geom_smooth(data = filter_data_LA(0), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(10), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(20), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(30), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(40), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(50), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_text_repel(data = filter_data_LA(0)[nrow(filter_data_LA(0)), ], aes(label = paste("LA: ", round(launch_angle))), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(10)[nrow(filter_data_LA(10)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(20)[nrow(filter_data_LA(20)), ], aes(label = round(launch_angle)), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(30)[nrow(filter_data_LA(30)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(40)[nrow(filter_data_LA(40)), ], aes(label = round(launch_angle)), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(50)[nrow(filter_data_LA(50)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  labs(title = "Exit Velocity With Respect to Attack Angle and Centerline Angle") + 
+  xlab("Centerline Angle (deg)") + ylab("Attack Angle (deg)")
+
+```
+```{r}
+
+
+  
+data_AA_CA[which.min(abs(as.numeric(la_for_peak_ev("Ohtani, Shohei")[1])-data_AA_CA$launch_angle)),]$launch_angle
+
+
+
+
+```
+```{r}
+plot1 <- ggplot(data_AA_CA, aes(CA, AA, z = scaled_ev)) + geom_contour(binwidth = 0.01) +
+  geom_text_contour(aes(label = round(..level.., 2))) +
+  geom_abline(CA = AA) + 
+  geom_smooth(data = filter_data_LA(0), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(10), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(20), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(30), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(40), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(50), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_text_repel(data = filter_data_LA(0)[nrow(filter_data_LA(0)), ], aes(label = paste("LA: ", round(launch_angle))), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(10)[nrow(filter_data_LA(10)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(20)[nrow(filter_data_LA(20)), ], aes(label = round(launch_angle)), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(30)[nrow(filter_data_LA(30)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(40)[nrow(filter_data_LA(40)), ], aes(label = round(launch_angle)), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(50)[nrow(filter_data_LA(50)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  labs(title = "Exit Velocity With Respect to Attack Angle and Centerline Angle") + 
+  xlab("Centerline Angle (deg)") + ylab("Attack Angle (deg)")
+
+
+
+
+```
+```{r}
+get_player_data <- function(player_name) {
+  data_player <- data_AA_CA %>%
+    filter(round(launch_angle) == round(as.numeric(la_for_peak_ev(player_name)[1])),
+         CA == AA) %>%
+    mutate(player_name = player_name)
+  return(data_player[1,])
+}
+
+top_hr_hitters <- c("Perez, Salvador", "Guerrero Jr., Vladimir","Ohtani, Shohei", "Semien, Marcus", "Tatis Jr., Fernando", "Judge, Aaron", "Olson, Matt", "Haniger, Mitch" ,"Lowe, Brandon", "Devers, Rafael")
+
+top_avg_hitters <- c("Turner, Trea", "Gurriel, Yuli", "Soto, Juan", "Brantley, Michael", "Guerrero Jr., Vladimir", "Marte, Starling", "Harper, Bryce", "Anderson, Tim", "Castellanos, Nick", "Frazier, Adam") 
+
+
+get_player_df <- function(players) {
+  data_players <- get_player_data(top_hr_hitters[1])
+  for (i in 2: length(top_hr_hitters)) {
+  new_data_player <- get_player_data((top_hr_hitters[i]))
+  data_players <- rbind(data_players, new_data_player)
+  }
+  return(data_players)
+}
+
+plot1 + geom_point(data = get_player_df(top_hr_hitters), aes(CA, AA)) + geom_text_repel(data = get_player_df(top_hr_hitters), aes(label = player_name))
+
+plot1 + geom_point(data = get_player_df(top_avg_hitters), aes(CA, AA)) + geom_text_repel(data = get_player_df(top_avg_hitters), aes(label = player_name))
+
+```
+## Plot each player's top 10 exit velo on AA vs CA graph
+```{r}
+plot1
+
+```
+
+```{r}
+#Function for plotting Exit Velocity vs Launch Angle for a batter
+get_top_10_data <- function(batter) {
+  #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
+  data_batter <- new_data2 %>%
+  select(player_name, scaled_ev, launch_speed, launch_angle) %>%
+  na.omit() %>%
+  #Label data with launch angle for every bins of width 5 degrees
+  filter(player_name == batter) %>%
+  mutate(theta5 = 5 * round(launch_angle / 5, 0)) %>%
+  arrange(launch_angle)
+  
+  #Create data set of top 10 percent exit velocity within each bins
+  new_df <- data.frame(theta5 = 0, top_10_ev = 0)
+  
+  for (theta in unique(data_batter$theta5)) {
+    n_data <- data_batter %>% 
+      filter(theta5 == theta)
+    df <- data.frame(theta5 = theta, top_10_ev = quantile(n_data$scaled_ev, seq(0, 1, 1/10))[10])
+    new_df <- rbind(new_df, df)
+  }
+
+  new_df <- new_df[-c(1),]
+  
+  data_batter <- inner_join(data_batter, new_df, by = "theta5")
+  
+  top_10_data <- data_batter %>%
+    filter(scaled_ev >= top_10_ev,
+           launch_angle > -40) %>%
+    mutate(top_10 = "Yes")
+  return(top_10_data)
+}
+  
+#Get closest data in excel
+
+get_approx_data <- function(player) {
+  player_data <- get_top_10_data(player) %>%
+  filter(launch_angle >= min(data_AA_CA$launch_angle),
+         launch_angle <= max(data_AA_CA$launch_angle))
+  
+
+  data_o <- data_AA_CA %>%
+  filter(launch_angle < 1 + player_data[1, ]$launch_angle,
+         launch_angle > -1 + player_data[1, ]$launch_angle)
+  data_oo <- data_o[which.min(abs(as.numeric(player_data[1, ]$scaled_ev)-data_o$scaled_ev)),]
+  
+  for (i in 2:nrow(player_data)) {
+    new_data_o <- data_AA_CA %>%
+      filter(launch_angle < 1 + player_data[i, ]$launch_angle,
+             launch_angle > -1 + player_data[i, ]$launch_angle)
+    new_data_oo <- new_data_o[which.min(abs(as.numeric(player_data[i, ]$scaled_ev)-new_data_o$scaled_ev)),]
+    data_oo <- rbind(data_oo, new_data_oo)
+  }
+  
+  return(data_oo)
+}
+
+plot1 + geom_point(data = get_approx_data("Ohtani, Shohei"), aes(CA, AA))
+```
+
+```{r}
+
+plot1 + geom_point(data = get_approx_data("Altuve, Jose"), aes(CA, AA))
+
+```
+```{r}
+AA_LA <- data_AA_CA %>%
+  filter(AA == CA) %>%
+  select(AA, launch_angle)
+
+ggplot(AA_LA, aes(AA, launch_angle)) + geom_point() + geom_smooth()
+```
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

@@ -52,3 +52,4 @@ ggplot(data3, aes(pitch_type, spin_eff, color = pitch_type)) +
   ylab("Spin Efficiency") +
   ylim(c(0, 2))
 
+

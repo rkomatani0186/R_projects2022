@@ -1,0 +1,305 @@
+---
+title: "ewoba_final"
+author: "Riku Komatani"
+date: "2022-12-06"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Expected Weighted On Base Average
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+
+```{r}
+#Libraries needed
+library(tidyverse)
+library(mgcv)
+library(broom)
+library(ggplot2)
+library(ggpubr)
+library(Lahman)
+
+library(ranger)
+library(caret)
+```
+
+## Obtain Statcast Data
+```{r}
+#Obtain statcast data from 2015 - 2021, excluding 2020 because of pandemic
+data_2015 <- read_csv("C:/Users/12244/STAT430/statcast/2015.csv")
+data_2016 <- read_csv("C:/Users/12244/STAT430/statcast/2016.csv")
+data_2017 <- read_csv("C:/Users/12244/STAT430/statcast/2017.csv")
+data_2018 <- read_csv("C:/Users/12244/STAT430/statcast/2018.csv")
+data_2019 <- read_csv("C:/Users/12244/STAT430/statcast/2019.csv")
+data_2021 <- read_csv("C:/Users/12244/STAT430/statcast/2021.csv")
+
+# data_tot <- rbind(data_2015, data_2016, data_2017, data_2018, data_2019, data_2021)
+data_tot <- data_2021
+
+#Filter data to in play data
+data_inplay <- data_tot %>%
+  filter(type == "X",
+        !(is.na(launch_speed)),
+        !(is.na(launch_angle)),
+        !(events %in% c("sac_bunt_double_play", "sac_bunt", "field_error", "game_advisory", "ejection")))
+
+```
+
+```{r}
+#Generate indicator for Single, Double, Triple, and HR
+data_inplay <- data_inplay %>%
+  mutate(Single = ifelse(events == "single", 1, 0),
+         Double = ifelse(events == "double", 1, 0),
+         Triple = ifelse(events == "triple", 1, 0),
+         HR = ifelse(events == "home_run", 1, 0),
+         NotH = ifelse(events %in% c("single", "double", "triple", "home_run"), 0, 1))
+
+```
+
+## Adding Sprint Speed to Data
+```{r}
+#Obtain sprint speed data from statcast
+data_sprint_2021 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2021.csv")
+data_sprint_2019 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2019.csv")
+data_sprint_2018 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2018.csv")
+data_sprint_2017 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2017.csv")
+data_sprint_2016 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2016.csv")
+data_sprint_2015 <- read_csv("C:/Users/12244/R_projects2022/R&D/sprint_speed_2015.csv")
+
+# data_sprint <- rbind(data_sprint_2021, data_sprint_2019, data_sprint_2018, data_sprint_2017, data_sprint_2016, data_sprint_2015)
+
+data_sprint <- data_sprint_2021
+
+data_sprint <- data_sprint %>%
+  mutate(player_name = paste0(last_name, ", ", first_name))
+
+colnames(data_sprint)[colnames(data_sprint) == "year"] <- "game_year"
+
+data_sprint <- data_sprint %>%
+  select(player_name, game_year, hp_to_1b, sprint_speed)
+
+#Combine inplay data with sprint speed data
+data_inplay2 <- inner_join(data_inplay, data_sprint, by = c("game_year", "player_name"))
+
+```
+
+
+## Non Weakly Hit Data
+```{r}
+#Consider balls with exit velo >= 55 mph and launch angle >= -50 degrees non weakly hit balls
+data_inplay_a <- data_inplay2 %>%
+  filter(launch_speed >= 55 & launch_angle >= -50)
+
+#Generalized Additive Model for probability of Single, Double, Triple, and HR (Binary Model)
+bm_Single_a <- gam(Single ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay_a)
+bm_Double_a <- gam(Double ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay_a)
+bm_Triple_a <- gam(Triple ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay_a)
+bm_HR_a <- gam(HR ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay_a)
+bm_NotH_a <- gam(NotH ~ s(launch_speed, launch_angle), family = binomial, data = data_inplay_a)
+
+#Add probabilities of each events to data
+data_inplay_a$prob_Single <- predict(bm_Single_a, data_inplay_a, type = "response")
+data_inplay_a$prob_Double <- predict(bm_Double_a, data_inplay_a, type = "response")
+data_inplay_a$prob_Triple <- predict(bm_Triple_a, data_inplay_a, type = "response")
+data_inplay_a$prob_HR <- predict(bm_HR_a, data_inplay_a, type = "response")
+data_inplay_a$prob_NotH <- predict(bm_NotH_a, data_inplay_a, type = "response")
+
+#ewoba = (woba factor for single * probability of single + woba factor for double * probability of double + etc) / sum of probabilities
+data_inplay_a <- data_inplay_a %>%
+  mutate(sum_prob = prob_Single + prob_Double + prob_Triple + prob_HR + prob_NotH,
+         ewoba = (0 * prob_NotH + 0.9 * prob_Single + 1.25 * prob_Double + 1.6 * prob_Triple + 2.0 * prob_HR) / sum_prob)
+
+```
+
+
+## Weakly Hit Data
+```{r}
+#Consider balls with exit velo < 55 mph or launch angle < -50 degrees non weakly hit balls
+data_inplay_b <- data_inplay2 %>%
+  filter(launch_speed < 55 | launch_angle < -50)
+
+#Generalized Additive Model for probability of Single, Double, Triple, and HR (Binary Model)
+bm_Single_b <- gam(Single ~ s(launch_speed, launch_angle, sprint_speed), family = binomial, data = data_inplay_b)
+bm_Double_b <- gam(Double ~ s(launch_speed, launch_angle, sprint_speed), family = binomial, data = data_inplay_b)
+bm_Triple_b <- gam(Triple ~ s(launch_speed, launch_angle, sprint_speed), family = binomial, data = data_inplay_b)
+bm_HR_b <- gam(HR ~ s(launch_speed, launch_angle, sprint_speed), family = binomial, data = data_inplay_b)
+bm_NotH_b <- gam(NotH ~ s(launch_speed, launch_angle, sprint_speed), family = binomial, data = data_inplay_b)
+
+#Add probabilities of each events to data
+data_inplay_b$prob_Single <- predict(bm_Single_b, data_inplay_b, type = "response")
+data_inplay_b$prob_Double <- predict(bm_Double_b, data_inplay_b, type = "response")
+data_inplay_b$prob_Triple <- predict(bm_Triple_b, data_inplay_b, type = "response")
+data_inplay_b$prob_HR <- predict(bm_HR_b, data_inplay_b, type = "response")
+data_inplay_b$prob_NotH <- predict(bm_NotH_b, data_inplay_b, type = "response")
+
+#ewoba = (woba factor for single * probability of single + woba factor for double * probability of double + etc) / sum of probabilities
+data_inplay_b <- data_inplay_b %>%
+  mutate(sum_prob = prob_Single + prob_Double + prob_Triple + prob_HR + prob_NotH,
+         ewoba = (0 * prob_NotH + 0.9 * prob_Single + 1.25 * prob_Double + 1.6 * prob_Triple + 2.0 * prob_HR) / sum_prob)
+
+```
+
+
+## Result
+```{r}
+#Combine weakly hit data with non weakly hit data
+data_inplay_ab <- rbind(data_inplay_a, data_inplay_b)
+
+#My ewoba color contour plot
+my_woba_ab <- ggplot(data_inplay_ab)+
+  geom_point(aes(x = launch_angle, y = launch_speed, color = ewoba)) +
+  scale_colour_gradientn(colours = (rainbow(20)))+
+  xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)") + labs(title = "my ewoba")
+
+#MLB ewoba color contour plot
+mlb_woba <- ggplot(data_inplay_ab)+
+  geom_point(aes(x = launch_angle, y = launch_speed, color = estimated_woba_using_speedangle)) +
+  scale_colour_gradientn(colours = (rainbow(20)))+
+  xlab("Launch Angle (deg)") + ylab("Exit Velocity (mph)") + labs(colour = "ewoba", title = "mlb ewoba")
+
+#Plot
+ggarrange(my_woba_ab, mlb_woba)
+
+```
+
+```{r}
+#RMSE of my ewoba and mlb ewoba
+sqrt(mean((data_inplay_ab$estimated_woba_using_speedangle - data_inplay_ab$ewoba)^2)) #0.08624337
+
+#RMSE of my ewoba and actual woba
+sqrt(mean((data_inplay_ab$ewoba - data_inplay_ab$woba_value)^2)) #0.4334333
+
+#RMSE of mlb ewoba and actual woba
+sqrt(mean((data_inplay_ab$estimated_woba_using_speedangle - data_inplay_ab$woba_value)^2)) #0.4275587
+```
+
+```{r}
+library(Metrics)
+mae(data_inplay_ab$estimated_woba_using_speedangle, data_inplay_ab$ewoba) #0.06039746
+mae(data_inplay$estimated_woba_using_speedangle, data_inplay$woba_value) #0.06220023
+
+```
+
+Using Ranger Regression Model
+```{r}
+#Filtering to Fourseam Fastballs
+data_FR <- data_inplay_ab %>%
+  filter(pitch_type == "FF",
+         p_throws == "R",
+         !is.na(release_pos_x),
+         !is.na(release_pos_z),
+         !is.na(release_extension),
+         !is.na(release_spin_rate))
+data_FR$id = 1:nrow(data_FR)
+train_data_FR = data_FR %>% dplyr::sample_frac(0.80)
+test_data_FR = dplyr::anti_join(data_FR, train_data_FR, by = 'id')
+train_data_FR = train_data_FR %>% select(-c(id, pitch_type))
+test_data_FR = test_data_FR %>% select(-c(id, pitch_type))
+
+
+forest_FR = ranger(estimated_woba_using_speedangle ~ plate_z + plate_x + release_speed + release_pos_z + release_pos_x + release_extension + pfx_x + pfx_z + release_spin_rate,
+                            data = train_data_FR,
+                            num.trees = 100,
+                            mtry = 5,
+                            min.node.size = 1,
+                            classification = FALSE,
+                            importance = "impurity")
+
+forest_FR$variable.importance
+
+data_FR_pred = predict(forest_FR, data = test_data_FR)
+data_FR_pred$prediction
+
+sqrt(mean((test_data_FR$estimated_woba_using_speedangle - data_FR_pred$prediction)^2)) #0.08624337
+
+typeof(test_data_FR$estimated_woba_using_speedangle[1])
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Separate estimated_woba_using_speedangle values into woba factors: 0.00, 0.90, 2.00, 1.25, 1.60
+```{r}
+data_inplay_ab2 <- data_inplay_ab %>%
+  mutate(predicted_woba = case_when(estimated_woba_using_speedangle < 0.45 ~ 0,
+                                     estimated_woba_using_speedangle >= 0.45 & estimated_woba_using_speedangle < 1.075 ~ 0.9,
+                                     estimated_woba_using_speedangle >= 1.075 & estimated_woba_using_speedangle < 1.425 ~ 1.25,
+                                     estimated_woba_using_speedangle >= 1.25 & estimated_woba_using_speedangle < 1.8 ~ 1.6,
+                                     estimated_woba_using_speedangle >= 1.8 ~ 2,
+                                     TRUE ~ 0))
+
+data_inplay_ab2 <- data_inplay_ab2 %>%
+  mutate(my_predicted_woba = case_when(ewoba < 0.45 ~ 0,
+                                     ewoba >= 0.45 & ewoba < 1.075 ~ 0.9,
+                                     ewoba >= 1.075 & ewoba < 1.425 ~ 1.25,
+                                     ewoba >= 1.25 & ewoba < 1.8 ~ 1.6,
+                                     ewoba >= 1.8 ~ 2,
+                                     TRUE ~ 0))
+                  
+```
+
+# Filtering to FF/RHP and making testing/training data, non NA release_pos_x/z, release_extension, release_spin_rate
+```{r}
+#Filtering to Fourseam Fastballs
+ff_inplay_R <- data_inplay_ab2 %>%
+  filter(pitch_type == "FF",
+         p_throws == "R",
+         !is.na(release_pos_x),
+         !is.na(release_pos_z),
+         !is.na(release_extension),
+         !is.na(release_spin_rate)) %>%
+  mutate(estimated_woba_using_speedangle = as.factor(estimated_woba_using_speedangle),
+         woba_value = as.factor(woba_value),
+         predicted_woba = as.factor(predicted_woba),
+         my_predicted_woba = as.factor(my_predicted_woba))
+
+
+#splitting into training and testing data
+ff_inplay_R$id = 1:nrow(ff_inplay_R)
+train_ff_inplay_R = ff_inplay_R %>% dplyr::sample_frac(0.80)
+test_ff_inplay_R = dplyr::anti_join(ff_inplay_R, train_ff_inplay_R, by = 'id')
+train_ff_inplay_R = train_ff_inplay_R %>% select(-c(id, pitch_type))
+test_ff_inplay_R = test_ff_inplay_R %>% select(-c(id, pitch_type))
+```
+
+# Testing Random Forest on FF/RHP
+
+```{r}
+forest_ff_inplay_R = ranger(my_predicted_woba ~ plate_z + plate_x + release_speed + release_pos_z + release_pos_x + release_extension + pfx_x + pfx_z + release_spin_rate,
+                            data = train_ff_inplay_R,
+                            num.trees = 100,
+                            mtry = 5,
+                            min.node.size = 1,
+                            classification = FALSE,
+                            importance = "impurity")
+
+forest_ff_inplay_R$variable.importance
+forest_ff_inplay_R$confusion.matrix
+ff_inplay_R_pred = predict(forest_ff_inplay_R, data = test_ff_inplay_R)
+ff_inplay_R_confmat = confusionMatrix(data = ff_inplay_R_pred$predictions, reference = test_ff_inplay_R$my_predicted_woba)
+ff_inplay_R_confmat$overall[1]
+
+as.data.frame(ff_inplay_R_confmat$table)
+
+summary(prcomp(~ plate_z + plate_x + release_speed + release_pos_z + release_pos_x + release_extension + pfx_x + pfx_z + release_spin_rate, train_ff_inplay_R))
+
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

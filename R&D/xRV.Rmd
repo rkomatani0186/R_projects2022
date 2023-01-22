@@ -1,0 +1,624 @@
+---
+title: "xRV"
+author: "Riku Komatani"
+date: "2023-01-08"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#Libraries needed
+library(tidyverse)
+library(mgcv)
+library(broom)
+library(ggplot2)
+library(ggpubr)
+library(Lahman)
+
+library(ranger)
+library(caret)
+
+library(retrosheet)
+
+library(stringr)
+```
+
+
+## Obtain play-by-play retrosheet data in 2021 season
+- Use cwevent from 0.6
+- Ensure paths are correct
+```{r}
+parse.retrosheet2.pbp = function(season){
+  # ADJUSTED FOR MAC -- function will work for WINDOWS and MAC
+  # download, unzip, append retrosheet data
+  # assume current directory has a folder download.folder
+  # download.folder has two subfolders unzipped and zipped
+  # program cwevent.exe is in unzipped folder (for windows)
+
+  download.retrosheet <- function(season){
+    # get zip file from retrosheet website
+    download.file(
+      url=paste("http://www.retrosheet.org/events/", season, "eve.zip", sep="")
+      , destfile=paste("C:/Users/12244/R_projects2022/R&D", "/zipped/", season, "eve.zip", sep="")
+    )
+  }
+  unzip.retrosheet <- function(season){
+    #unzip retrosheet files
+    unzip(paste("C:/Users/12244/R_projects2022/R&D", "/zipped/", season, "eve.zip", sep=""),
+          exdir=paste("C:/Users/12244/R_projects2022/R&D", "/unzipped/", sep=""))
+  }
+  create.csv.file=function(year){
+    #http://chadwick.sourceforge.net/doc/cwevent.html#cwtools-cwevent
+    #shell("cwevent -y 2000 2000TOR.EVA > 2000TOR.bev")
+    wd = getwd()
+    setwd("C:/Users/12244/R_projects2022/R&D/unzipped/")
+    if (.Platform$OS.type == "unix"){
+      system(paste(paste("cwevent -y", year, "-f 0-96"),
+                   paste(year,"*.EV*",sep=""),
+                   paste("> all", year, ".csv", sep="")))} else {
+                     shell(paste(paste("cwevent -y", year, "-f 0-96"),
+                                 paste(year,"*.EV*",sep=""),
+                                 paste("> all", year, ".csv", sep="")))
+                   }
+    setwd(wd)
+  }
+  create.csv.roster = function(year){
+    # creates a csv file of the rosters
+    filenames <- list.files(path = "C:/Users/12244/R_projects2022/R&D/unzipped/")
+    filenames.roster =
+      subset(filenames, substr(filenames, 4, 11)==paste(year,".ROS",sep=""))
+    read.csv2 = function(file)
+      read.csv(paste("C:/Users/12244/R_projects2022/R&D/unzipped/", file, sep=""),header=FALSE)
+    R = do.call("rbind", lapply(filenames.roster, read.csv2))
+    names(R)[1:6] = c("Player.ID", "Last.Name", "First.Name",
+                      "Bats", "Pitches", "Team")
+    wd = getwd()
+    setwd("C:/Users/12244/R_projects2022/R&D/unzipped")
+    write.csv(R, file=paste("roster", year, ".csv", sep=""))
+    setwd(wd)
+  }
+  cleanup = function(){
+    # removes retrosheet files not needed
+    wd = getwd()
+    setwd("C:/Users/12244/R_projects2022/R&D/unzipped")
+    if (.Platform$OS.type == "unix"){
+      system("rm *.EVN")
+      system("rm *.EVA")
+      system("rm *.ROS")
+      system("rm TEAM*")} else {
+        shell("del *.EVN")
+        shell("del *.EVA")
+        shell("del *.ROS")
+        shell("del TEAM*")
+      }
+    setwd(wd)
+    setwd("C:/Users/12244/R_projects2022/R&D/zipped")
+    if (.Platform$OS.type == "unix"){
+      system("rm *.zip")} else {
+        shell("del *.zip")
+      }
+    setwd(wd)
+  }
+  download.retrosheet(season)
+  unzip.retrosheet(season)
+  create.csv.file(season)
+  create.csv.roster(season)
+  cleanup()
+}
+
+# parse.retrosheet2.pbp(2021)
+```
+
+## Import Retrosheet Data
+```{r}
+fields <- read_csv("C:/Users/12244/STAT430/stat430materials/lectures/week5_runexpectancy/fields.csv")
+dat2021 <- read_csv("C:/Users/12244/R_projects2022/R&D/unzipped/all2021.csv",
+                    col_names = pull(fields, Header),
+                    na = character())
+
+
+```
+
+## Calculate Run Value for all Pitches
+```{r}
+#Include runs, half inning, and runs scored
+dat2021 <- dat2021 %>% 
+  mutate(RUNS = AWAY_SCORE_CT + HOME_SCORE_CT,
+         HALF.INNING = paste(GAME_ID, INN_CT, BAT_HOME_ID),
+         RUNS.SCORED = (BAT_DEST_ID > 3) + (RUN1_DEST_ID > 3) + (RUN2_DEST_ID > 3) + (RUN3_DEST_ID > 3))
+
+#Group by half inning
+half_innings <- dat2021 %>%
+  group_by(HALF.INNING) %>%
+  dplyr::summarise(Outs.Inning = sum(EVENT_OUTS_CT),
+            Runs.Inning = sum(RUNS.SCORED),
+            Runs.Start = first(RUNS),
+            MAX.RUNS = Runs.Inning + Runs.Start)
+
+#Join two data
+dat2021 <- dat2021 %>%
+  inner_join(half_innings, by = "HALF.INNING") %>%
+  mutate(RUNS.ROI = MAX.RUNS - RUNS)
+
+#Mutate additional information regarding state and new state
+dat2021 <- dat2021 %>% mutate(BASES = paste(ifelse(BASE1_RUN_ID != "",1,0), 
+                                            ifelse(BASE2_RUN_ID != "",1,0), 
+                                            ifelse(BASE3_RUN_ID != "",1,0), sep = ""), 
+                              STATE = paste(BASES, OUTS_CT))
+
+dat2021 <- dat2021 %>% 
+  mutate(NRUNNER1 = as.numeric(RUN1_DEST_ID == 1 | BAT_DEST_ID == 1), 
+         NRUNNER2 = as.numeric(RUN1_DEST_ID == 2 | RUN2_DEST_ID == 2 | BAT_DEST_ID == 2),
+         NRUNNER3 = as.numeric(RUN1_DEST_ID == 3 | RUN2_DEST_ID == 3 | RUN3_DEST_ID == 3 | BAT_DEST_ID == 3),
+         NOUTS = OUTS_CT + EVENT_OUTS_CT,
+         NEW.BASES = paste(NRUNNER1, NRUNNER2, NRUNNER3, sep = ""),
+         NEW.STATE = paste(NEW.BASES, NOUTS)) %>%
+  filter((STATE != NEW.STATE) | (RUNS.SCORED > 0)) %>%
+  filter(Outs.Inning == 3)
+
+#Create data for runs
+RUNS <- dat2021 %>%
+  group_by(STATE) %>%
+  dplyr::summarize(Mean = mean(RUNS.ROI)) %>%
+  mutate(Outs = substr(STATE, 5, 5)) %>%
+  arrange(Outs)
+
+#Run expectancy matrix
+RUNS_out <- matrix(round(RUNS$Mean, 2), 8, 3)
+dimnames(RUNS_out)[[1]] <- c("000","001","010","011",
+"100","101","110","111")
+dimnames(RUNS_out)[[2]] <- c("0 outs", "1 out", "2 outs")
+RUNS_out
+
+#Mutate run value to data
+dat2021 <- dat2021 %>%
+  left_join(select(RUNS, - Outs), by = "STATE") %>%
+  rename(Runs.State = Mean) %>%
+  left_join(select(RUNS, -Outs), by = c("NEW.STATE" = "STATE")) %>%
+  rename(Runs.New.State = Mean) %>%
+  replace_na(list(Runs.New.State = 0)) %>%
+  mutate(run_value = Runs.New.State - Runs.State + RUNS.SCORED)
+
+```
+
+## Obtain linear weights of each events 
+- the actual outcome (i.e. runs scored) of each pitch is dependent on many other aspects, some beyond the control of the pitcher, and we want to treat them equally
+```{r}
+#EVENT_CD (pg 299) Nonintentional Walk = 14, Hit By Pitch = 16, Single = 20, Double = 21, Triple = 22, Homerun = 23, 5 = Defensive Indifference (Fouls, Called Strike, Swing and Miss)
+
+#Pitch_type (https://www.retrosheet.org/eventfile.htm) S: swinging strike, X: ball put into play by batter
+# B: ball, C: called strike, F: foul, H: hit batter, I: intentional ball, K: strike (unknown type), L: foul bunt, M: missed bunt attempt, N: no pitch (on balks and interference calls), O: foul tip on bunt, P: pitchout, Q: swinging on pitchout, R: foul ball on pitchout, T: foul tip, U: unknown or missed pitch, V: called ball because pitcher went to his mouth or automatic ball on intentional walk, Y: ball put into play on pitchout
+
+#Obtain pitch type
+dat2021_2 <- dat2021 %>%
+  mutate(pitch_type = str_sub(PITCH_SEQ_TX, -1, -1))
+
+#Filter to only events that occur after a swing
+dat2021_2 <- dat2021_2 %>%
+  filter(pitch_type %in% c("S", "T", "X")) %>%
+  filter(!(EVENT_CD %in% c(6, 4, 17, 12, 11, 18, 19, 9, 10)))
+
+#Separate and label each events
+dat2021_2 <- dat2021_2 %>%
+  mutate(play_result = case_when(pitch_type == "X" ~ EVENT_CD,
+                                 #24 = strikeout swing and miss
+                                 pitch_type == "S" & EVENT_CD == 3 ~ 24,
+                                 #24 = foul tip strikeout
+                                 pitch_type == "T" & EVENT_CD == 3 ~ 24,
+                                 TRUE ~ 0))
+
+#linear weights for strikeout swing and miss and foul tip strikeout were similar: combine
+dat2021_2 <- dat2021_2 %>%
+  filter(play_result != 0) %>%
+  mutate(play_name = case_when(play_result == 2 ~ "Generic Out",
+                               play_result == 20 ~ "Single",
+                               play_result == 21 ~ "Double",
+                               play_result == 22 ~ "Triple",
+                               play_result == 23 ~ "Home run",
+                               play_result == 24 ~ "Strikeout SwingandMiss"))
+
+
+
+#Obtain linear weights of each events
+linear_weights <- dat2021_2 %>% 
+  group_by(play_name) %>%
+  dplyr::summarise(count = n(),
+                   total_run_value = sum(run_value),
+                   RV = total_run_value / count)
+
+```
+
+## Combine linear weights with Statcast Data 2021
+```{r}
+#Statcast data
+sc_2021 <- read_csv("C:/Users/12244/STAT430/statcast/2021.csv")
+
+#Adjust Statcast data to match linear weights
+sc_2021 <- sc_2021 %>%
+  filter(events %in% c("single", "double", "triple", "home_run", "strikeout", "force_out", "field_out",  "grounded_into_double_play", "sac_fly", "sac_fly_double_play", "strikeout_double_play", "double_play", "triple_play"))
+
+sc_2021 <- sc_2021 %>%
+  mutate(play_name = case_when(events == "single" ~ "Single",
+                               events == "double" ~ "Double",
+                               events == "triple" ~ "Triple",
+                               events == "home_run" ~ "Home run",
+                               events %in% c("force_out", "field_out", "grounded_into_double_play", "sac_fly", "sac_fly_double_play", "double_play", "triple_play") ~ "Generic Out",
+                               events %in% c("strikeout", "strikeout_double_play") & description == "swinging_strike" ~ "Strikeout SwingandMiss"))
+
+#Filter data to only in-play or strikeout swingandmiss
+sc_2021 <- sc_2021 %>%
+  filter(!is.na(play_name))
+
+#Join linear weights with Statcast data
+sc_lw_2021 <- sc_2021 %>%
+  inner_join(linear_weights, by = "play_name")
+
+#Adjust horizontal data to account for R and L pitchers
+sc_lw_2021 <- sc_lw_2021 %>%
+  mutate(release_pos_x_adj = ifelse(p_throws == "R", release_pos_x, - release_pos_x),
+         pfx_x_adj = ifelse(p_throws == "R", pfx_x, - pfx_x),
+         spin_axis_adj = ifelse(p_throws == "R", spin_axis, 360 - spin_axis)) %>%
+  filter(!is.na(release_speed),
+         !is.na(release_pos_z),
+         !is.na(release_pos_x_adj),
+         !is.na(release_extension),
+         !is.na(pfx_x_adj),
+         !is.na(pfx_z),
+         !is.na(release_spin_rate),
+         !is.na(spin_axis_adj))
+
+```
+
+## Combine linear weights with Statcast Data 2019
+```{r}
+#Statcast data
+sc_2015 <- read_csv("C:/Users/12244/STAT430/statcast/2015.csv")
+sc_2016 <- read_csv("C:/Users/12244/STAT430/statcast/2016.csv")
+sc_2017 <- read_csv("C:/Users/12244/STAT430/statcast/2017.csv")
+sc_2018 <- read_csv("C:/Users/12244/STAT430/statcast/2018.csv")
+sc_2019 <- read_csv("C:/Users/12244/STAT430/statcast/2019.csv")
+
+# sc_2019 <- rbind(sc_2017, sc_2018, sc_2019)
+
+
+#Adjust Statcast data to match linear weights
+sc_2019 <- sc_2019 %>%
+  filter(events %in% c("single", "double", "triple", "home_run", "strikeout", "force_out", "field_out",  "grounded_into_double_play", "sac_fly", "sac_fly_double_play", "strikeout_double_play", "double_play", "triple_play"))
+  # filter(events %in% c("single", "double", "triple", "home_run", "force_out", "field_out", "grounded_into_double_play", "double_play", "triple_play"))
+
+sc_2019 <- sc_2019 %>%
+  mutate(play_name = case_when(events == "single" ~ "Single",
+                               events == "double" ~ "Double",
+                               events == "triple" ~ "Triple",
+                               events == "home_run" ~ "Home run",
+                               events %in% c("force_out", "field_out", "grounded_into_double_play", "sac_fly", "sac_fly_double_play", "double_play", "triple_play") ~ "Generic Out",
+                               events %in% c("strikeout", "strikeout_double_play") & description == "swinging_strike" ~ "Strikeout SwingandMiss"))
+
+#Filter data to only in-play or strikeout swingandmiss
+sc_2019 <- sc_2019 %>%
+  filter(!is.na(play_name))
+
+#Join linear weights with Statcast data
+sc_lw_2019 <- sc_2019 %>%
+  inner_join(linear_weights, by = "play_name")
+
+#Adjust horizontal data to account for R and L pitchers
+sc_lw_2019 <- sc_lw_2019 %>%
+  mutate(release_pos_x_adj = ifelse(p_throws == "R", release_pos_x, - release_pos_x),
+         pfx_x_adj = ifelse(p_throws == "R", pfx_x, - pfx_x),
+         spin_axis_adj = ifelse(p_throws == "R", spin_axis, 360 - spin_axis)) %>%
+  filter(!is.na(release_speed),
+         !is.na(release_pos_z),
+         !is.na(release_pos_x_adj),
+         !is.na(release_extension),
+         !is.na(pfx_x_adj),
+         !is.na(pfx_z),
+         !is.na(release_spin_rate),
+         !is.na(spin_axis_adj))
+
+```
+
+
+## Run Expectancy Model using Ranger for FF
+```{r}
+sc_lw_2021_FF <- sc_lw_2021 %>%
+  filter(pitch_type == "FF")
+
+sc_lw_2019_FF <- sc_lw_2019 %>%
+  filter(pitch_type == "FF")
+
+#splitting into training and testing data or use all data as train
+sc_lw_2019_FF$id = 1:nrow(sc_lw_2019_FF)
+train_sc_lw_2019_FF = sc_lw_2019_FF %>% dplyr::sample_frac(0.80)
+test_sc_lw_2019_FF = dplyr::anti_join(sc_lw_2019_FF, train_sc_lw_2019_FF, by = 'id')
+train_sc_lw_2019_FF = train_sc_lw_2019_FF %>% select(-c(id, pitch_type))
+test_sc_lw_2019_FF = test_sc_lw_2019_FF %>% select(-c(id, pitch_type))
+
+#release_speed + release_pos_z + release_pos_x_adj + release_extension + pfx_x_adj + pfx_z + release_spin_rate + spin_axis_adj + plate_x + plate_z
+
+forest_FF = ranger(RV ~ release_speed + pfx_z,
+                            data = train_sc_lw_2019_FF,
+                            num.trees = 100,
+                            mtry = 1,
+                            min.node.size = 1,
+                            classification = FALSE,
+                            importance = "permutation")
+
+rmse(test_sc_lw_2019_FF$RV, predict(forest_FF, test_sc_lw_2019_FF)$prediction)
+
+
+sc_lw_2019_FF_pred = predict(forest_FF, data = test_sc_lw_2019_FF)
+
+test_sc_lw_2019_FF$pred_RV= sc_lw_2019_FF_pred$predictions
+
+ggplot(test_sc_lw_2019_FF) + geom_point(aes(release_speed, RV))
+
+forest_FF$variable.importance
+```
+
+```{r}
+mlb_2021 <- read.csv("C:/Users/12244/R_projects2022/R&D/MLB_2021.csv")
+mlb_2021_FF <- mlb_2021 %>%
+  filter(Pitch == "FF")
+ggplot(mlb_2021_FF) + geom_point(aes(xRV, Actual.RV))
+```
+
+```{r}
+library(xgboost)
+fastball_data <- sc_lw_2021_FF %>%
+  select(release_speed, release_pos_z, release_pos_x_adj, release_extension, pfx_x_adj, pfx_z, release_spin_rate, spin_axis_adj, RV) %>%
+  na.omit()
+
+fastball_data$id = 1:nrow(fastball_data)
+train_fastball = fastball_data %>%
+  dplyr::sample_frac(0.80)
+test_fastball = dplyr::anti_join(fastball_data, train_fastball, by = 'id') %>% select(-id); train_fastball = train_fastball %>% select(-id)
+
+train_fastball_x = data.matrix(train_fastball[, -9]) #9 is play indicator
+train_fastball_y = data.matrix(train_fastball[, 9])
+
+test_fastball_x = data.matrix(test_fastball[, -9])
+test_fastball_y = data.matrix(test_fastball[, 9])
+
+
+xgb_train = xgb.DMatrix(data = train_fastball_x, label = train_fastball_y)
+xgb_test = xgb.DMatrix(data = test_fastball_x, label = test_fastball_y)
+
+watchlist = list(train = xgb_train, 
+                 eval = xgb_test)
+
+params = list(objective = "multi:softprob", #multi:softprob
+              eval_metric = "aucpr", #auc or aucpr
+              num_class = 6,
+              max_depth = 8,
+              eta = 0.2)
+
+fastball_xgb = xgb.train(data = xgb_train,
+                         params = params,
+                         nround = 20000,
+                         early_stopping_rounds = 1,
+                         verbose = 0,
+                         watchlist = watchlist)
+
+```
+
+
+
+## Testing different ranger models
+Lowest RMSE (0.1783) when num.trees = 1000, mtry = 3, min.node.size = 1, importance = "permutation" or "impurity"
+```{r}
+library(Metrics)
+#ntree: Number of trees to grow
+#mtry: Number of variables randomly sampled as candidates at each split
+#min.node.size: Minimum size (data points) of terminal nodes. Setting this number larger causes smaller trees to be grown (and thus take less time).
+rf = ranger(RV ~ release_speed + release_pos_z + release_pos_x_adj + release_extension + pfx_x_adj + pfx_z + release_spin_rate + spin_axis_adj,
+                            data = sc_lw_2021_FF,
+                            num.trees = 1000,
+                            mtry = 3,
+                            min.node.size = 1,
+                            classification = FALSE,
+                            importance = "impurity")
+
+rmse(sc_lw_2021_FF$RV, predict(rf, sc_lw_2021_FF)$prediction)
+```
+
+
+## Filter to pitcher with more than or equal to 15 pitches (FF in-play or strikeout Swing&Miss)
+```{r}
+test <- sc_lw_2021_FF %>%
+  group_by(pitcher) %>%
+  summarize(avg_RV = mean(pred_RV),
+            avg_release_speed = mean(release_speed),
+            avg_pfx_z = mean(pfx_z),
+            avg_pfx_x_adj = mean(pfx_x_adj),
+            avg_release_extension = mean(release_extension),
+            avg_release_pos_z = mean(release_pos_z),
+            avg_release_pos_x_adj = mean(release_pos_x_adj),
+            avg_release_spin_rate = mean(release_spin_rate),
+            avg_spin_axis_adj = mean(spin_axis_adj),
+            num_pitches = n()) %>%
+  filter(num_pitches >= 15) %>%
+  arrange(avg_RV)
+
+z_score <- scale(test$avg_RV, center = mean(test$avg_RV))
+
+percentile <- sapply(z_score, pnorm)
+
+percentile_adj <- 200 - percentile * 100 * 2
+
+test$Stuff_plus = percentile_adj
+```
+
+## Distribution of Stuff+ values
+```{r}
+ggplot(test) + geom_histogram(aes(Stuff_plus), binwidth = 5)
+
+```
+
+## Obtain pitcher's general info from baseballsavant
+```{r}
+pdata_2021 <- read.csv("C:/Users/12244/STAT430/fa22_stat430_ruk2/final/statcast_data/data2021.csv")
+
+names(pdata_2021)[names(pdata_2021) == 'player_id'] <- 'pitcher'
+
+#Combine with test data, add FIP to data, and filter to pitchers who threw more than 50 innings 
+data_combined <- inner_join(test, pdata_2021, by = "pitcher") %>%
+  mutate(FIP = 3*(13*p_home_run + 3*p_walk - 2*p_strikeout)/p_formatted_ip) %>%
+  filter(p_formatted_ip > 50)
+```
+
+
+## Testing relationship between Stuff+ and other variables (ERA and FIP)
+```{r}
+#ERA vs Stuff+
+plot1 <- ggplot(data_combined, aes(Stuff_plus, p_era)) + geom_point() + geom_smooth(method = lm)
+
+model1 <- lm(p_era ~ Stuff_plus, data = data_combined)
+
+summary(model1)$r.squared #0.2372815
+
+#FIP vs Stuff+
+plot2 <- ggplot(data_combined, aes(Stuff_plus, FIP)) + geom_point() + geom_smooth(method = lm)
+
+model2 <- lm(FIP ~ Stuff_plus, data = data_combined)
+
+summary(model2)$r.squared #0.2210354
+
+ggarrange(plot1, plot2)
+```
+
+
+```{r}
+
+
+```
+
+
+## Stuff+ for Non FF:
+
+## Cutter
+```{r}
+#Cutter
+sc_lw_2021_FC <- sc_lw_2021 %>%
+  filter(pitch_type == "FC")
+
+forest_FC = ranger(RV ~ release_speed + release_pos_z + release_pos_x_adj + release_extension + pfx_x_adj + pfx_z + release_spin_rate + spin_axis_adj,
+                            data = sc_lw_2021_FC,
+                            num.trees = 1000,
+                            mtry = 3,
+                            min.node.size = 1,
+                            classification = FALSE,
+                            importance = "permutation")
+
+sc_lw_2021_FC_pred = predict(forest_FC, data = sc_lw_2021_FC)
+
+sc_lw_2021_FC$pred_RV = sc_lw_2021_FC_pred$prediction
+```
+
+
+## Testing different ranger models
+Lowest RMSE (0.1703) when num.trees = 1000, mtry = 3, min.node.size = 1, importance = "permutation" or "impurity"
+```{r}
+library(Metrics)
+#ntree: Number of trees to grow
+#mtry: Number of variables randomly sampled as candidates at each split
+#min.node.size: Minimum size (data points) of terminal nodes. Setting this number larger causes smaller trees to be grown (and thus take less time).
+rf_FC = ranger(RV ~ release_speed + release_pos_z + release_pos_x_adj + release_extension + pfx_x_adj + pfx_z + release_spin_rate + spin_axis_adj,
+                            data = sc_lw_2021_FC,
+                            num.trees = 1000,
+                            mtry = 3,
+                            min.node.size = 1,
+                            classification = FALSE,
+                            importance = "impurity")
+
+rmse(sc_lw_2021_FC$RV, predict(rf_FC, sc_lw_2021_FC)$prediction)
+```
+
+## Filter to pitcher with more than or equal to 15 pitches (FC in-play or strikeout Swing&Miss)
+```{r}
+test_FC <- sc_lw_2021_FC %>%
+  group_by(pitcher) %>%
+  summarize(avg_RV = mean(pred_RV),
+            num_pitches = n()) %>%
+  filter(num_pitches >= 15) %>%
+  arrange(avg_RV)
+
+z_score_FC <- scale(test_FC$avg_RV, center = mean(test_FC$avg_RV))
+
+percentile_FC <- sapply(z_score_FC, pnorm)
+
+percentile_adj_FC <- 200 - percentile_FC * 100 * 2
+
+test_FC$Stuff_plus = percentile_adj_FC
+```
+
+
+
+## Sinker and Two Seam Fastball
+```{r}
+#Sinker and Two Seam Fastball
+sc_lw_2021_SIFS <- sc_lw_2021 %>%
+  filter(pitch_type %in% c("FS", "SI"))
+
+forest_SIFS = ranger(RV ~ release_speed + release_pos_z + release_pos_x_adj + release_extension + pfx_x_adj + pfx_z + release_spin_rate + spin_axis_adj,
+                            data = sc_lw_2021_SIFS,
+                            num.trees = 1000,
+                            mtry = 3,
+                            min.node.size = 1,
+                            classification = FALSE,
+                            importance = "permutation")
+
+sc_lw_2021_SIFS_pred = predict(forest_SIFS, data = sc_lw_2021_SIFS)
+
+sc_lw_2021_SIFS$pred_RV = sc_lw_2021_SIFS_pred$prediction
+```
+
+
+## Testing different ranger models
+Lowest RMSE (0.1653) when num.trees = 1000, mtry = 3, min.node.size = 1, importance = "permutation" or "impurity"
+```{r}
+library(Metrics)
+#ntree: Number of trees to grow
+#mtry: Number of variables randomly sampled as candidates at each split
+#min.node.size: Minimum size (data points) of terminal nodes. Setting this number larger causes smaller trees to be grown (and thus take less time).
+rf_SIFS = ranger(RV ~ release_speed + release_pos_z + release_pos_x_adj + release_extension + pfx_x_adj + pfx_z + release_spin_rate + spin_axis_adj,
+                            data = sc_lw_2021_SIFS,
+                            num.trees = 1000,
+                            mtry = 3,
+                            min.node.size = 1,
+                            classification = FALSE,
+                            importance = "impurity")
+
+rmse(sc_lw_2021_SIFS$RV, predict(rf_SIFS, sc_lw_2021_SIFS)$prediction)
+```
+
+## Filter to pitcher with more than or equal to 15 pitches (SI, FS in-play or strikeout Swing&Miss)
+```{r}
+test_SIFS <- sc_lw_2021_SIFS %>%
+  group_by(pitcher) %>%
+  summarize(avg_RV = mean(pred_RV),
+            num_pitches = n()) %>%
+  filter(num_pitches >= 15) %>%
+  arrange(avg_RV)
+
+z_score_SIFS <- scale(test_SIFS$avg_RV, center = mean(test_SIFS$avg_RV))
+
+percentile_SIFS <- sapply(z_score_SIFS, pnorm)
+
+percentile_adj_SIFS <- 200 - percentile_SIFS * 100 * 2
+
+test_SIFS$Stuff_plus = percentile_adj_SIFS
+```
+
+
+
+
+Inputs: “release_speed”, “release_pos_x_adj”, “release_extension”, “release_pos_z”, “pfx_x_adj”, “pfx_z”, “release_spin_rate”, “spin_axis_adj”, "spin_efficiency"?????????????
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

@@ -1,0 +1,720 @@
+---
+title: "Pitching_stat"
+output: html_document
+date: "2022-11-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Lahman)
+library(dplyr)
+library(mgcv)
+library(broom)
+library(ggplot2)
+library(tidyverse)
+library(baseballr)
+```
+
+```{r}
+annual_statcast_query <- function(season) {
+	
+	data_base_column_types <- read_csv("https://app.box.com/shared/static/q326nuker938n2nduy81au67s2pf9a3j.csv")
+	
+	dates <- seq.Date(as.Date(paste0(season, '-03-01')),
+										as.Date(paste0(season, '-12-01')), by = '4 days')
+	
+	date_grid <- tibble::tibble(start_date = dates, 
+															end_date = dates + 3)
+	
+	safe_savant <- purrr::safely(scrape_statcast_savant)
+	
+	payload <- purrr::map(.x = seq_along(date_grid$start_date), 
+												~{message(paste0('\nScraping week of ', date_grid$start_date[.x], '...\n'))
+													
+													payload <- safe_savant(start_date = date_grid$start_date[.x], 
+																								 end_date = date_grid$end_date[.x], type = 'pitcher')
+													
+													return(payload)
+												})
+	
+	payload_df <- purrr::map(payload, 'result')
+	
+	number_rows <- purrr::map_df(.x = seq_along(payload_df), 
+															 ~{number_rows <- tibble::tibble(week = .x, 
+															 																number_rows = length(payload_df[[.x]]$game_date))}) %>%
+		dplyr::filter(number_rows > 0) %>%
+		dplyr::pull(week)
+	
+	payload_df_reduced <- payload_df[number_rows]
+	
+	payload_df_reduced_formatted <- purrr::map(.x = seq_along(payload_df_reduced), 
+																						 ~{cols_to_transform <- c("fielder_2", "pitcher_1", "fielder_2_1", "fielder_3",
+																						 												 "fielder_4", "fielder_5", "fielder_6", "fielder_7",
+																						 												 "fielder_8", "fielder_9")
+																						 
+																						 df <- purrr::pluck(payload_df_reduced, .x) %>%
+																						 	dplyr::mutate_at(.vars = cols_to_transform, as.numeric) %>%
+																						 	dplyr::mutate_at(.vars = cols_to_transform, function(x) {
+																						 		ifelse(is.na(x), 999999999, x)
+																						 	})
+																						 
+																						 character_columns <- data_base_column_types %>%
+																						 	dplyr::filter(class == "character") %>%
+																						 	dplyr::pull(variable)
+																						 
+																						 numeric_columns <- data_base_column_types %>%
+																						 	dplyr::filter(class == "numeric") %>%
+																						 	dplyr::pull(variable)
+																						 
+																						 integer_columns <- data_base_column_types %>%
+																						 	dplyr::filter(class == "integer") %>%
+																						 	dplyr::pull(variable)
+																						 
+																						 df <- df %>%
+																						 	dplyr::mutate_if(names(df) %in% character_columns, as.character) %>%
+																						 	dplyr::mutate_if(names(df) %in% numeric_columns, as.numeric) %>%
+																						 	dplyr::mutate_if(names(df) %in% integer_columns, as.integer)
+																						 
+																						 return(df)
+																						 })
+	
+	combined <- payload_df_reduced_formatted %>%
+		dplyr::bind_rows()
+	
+	combined
+}
+
+```
+
+```{r}
+#Download pitch to pitch data for years 2015 to 2022, excluding 2021.
+statcast_2015 <- annual_statcast_query(2015)
+write.csv(statcast_2015, "C:/Users/12244/STAT430/statcast_data/2015.csv")
+
+statcast_2016 <- annual_statcast_query(2016)
+write.csv(statcast_2016, "C:/Users/12244/STAT430/statcast_data/2016.csv")
+
+statcast_2017 <- annual_statcast_query(2017)
+write.csv(statcast_2017, "C:/Users/12244/STAT430/statcast_data/2017.csv")
+
+statcast_2018 <- annual_statcast_query(2018)
+write.csv(statcast_2018, "C:/Users/12244/STAT430/statcast_data/2018.csv")
+
+statcast_2019 <- annual_statcast_query(2019)
+write.csv(statcast_2019, "C:/Users/12244/STAT430/statcast_data/2019.csv")
+
+statcast_2021 <- annual_statcast_query(2021)
+write.csv(statcast_2021, "C:/Users/12244/STAT430/statcast_data/2021.csv")
+
+statcast_2022 <- annual_statcast_query(2022)
+write.csv(statcast_2022, "C:/Users/12244/STAT430/statcast_data/2022.csv")
+
+
+```
+
+```{r}
+#Scratch
+
+data_2017 <- read.csv("C:/Users/12244/STAT430/statcast_data/2017.csv")
+data_2018 <- read.csv("C:/Users/12244/STAT430/statcast_data/2018.csv")
+
+colnames(data_2018)[colnames(data_2018) == "X"] <- "...1"
+
+data_tot <- rbind(data_2015, data_2016)
+
+data_tot <- rbind(data_tot, data_2017)
+
+data_tot <- rbind(data_tot, data_2018)
+
+data_tot <- rbind(data_tot, data_2019)
+
+data_tot <- rbind(data_tot, data_2021)
+
+
+colnames(data_2018)
+
+#Adding in full name to dataframe
+dx <- data_2017 %>%
+  filter(type == "X",
+         !is.na(plate_x)) %>%
+  mutate(Hit = ifelse(events %in% c("single", "double", "triple", "home_run"), 1, 0))
+
+unique(dx$events)
+
+names <- dx$player_name
+first_names <- vector("list", length(names))
+last_names <- vector("list", length(names))
+full_name <- vector("list", length(names))
+for (i in 1:length(names)) {
+  first_names[i] <- strsplit(names[i], ", ")[[1]][2]
+  last_names[i] <- strsplit(names[i], ", ")[[1]][1]
+  full_name[i] <- paste(first_names[i], last_names[i])
+}
+
+full_name2 <- unlist(full_name)
+
+dx$full_name <- full_name2
+
+
+
+topKzone <- 3.6
+botKzone <- 1.5
+inKzone <- -0.95
+outKzone <- 0.95
+kZone <- data.frame(
+  x=c(inKzone, inKzone, outKzone, outKzone, inKzone),
+  y=c(botKzone, topKzone, topKzone, botKzone, botKzone)
+)
+  
+
+fit <- gam(Hit ~ s(plate_x, plate_z), family = binomial, data = dx)
+
+x <- seq(-1.5, 1.5, length.out=50)
+y <- seq(0.5, 5, length.out=50)
+
+data.predict <- data.frame(plate_x = c(outer(x, y * 0 + 1)),
+                            plate_z = c(outer(x * 0 + 1, y)))
+
+lp <- predict(fit, data.predict)
+data.predict$Probability <- exp(lp) / (1 + exp(lp))
+data.predict$prob <- predict(fit, data.predict)
+
+dx$pred <- predict(fit, dx)
+
+
+library(broom)
+
+hats <- fit %>%
+  augment(type.predict = "response", newdata = data.predict)
+
+
+ggplot(hats, aes(plate_x, plate_z)) + 
+  geom_tile(aes(fill = .fitted)) + 
+  scale_fill_distiller(palette = "Spectral") + 
+  geom_path(data = kZone, aes(x, y)) +
+  coord_fixed()
+
+
+library(Lahman)
+data_people <- People
+
+data_pitching <- Pitching
+
+playerid_lookup("Trout", "Mike")$mlbam_id
+
+playername_lookup(572020)
+
+paste(f, l)
+
+f = "Jose"
+l = "Altuve"
+
+p <- c(f, l)
+
+p
+
+mlb_id <- playerid_lookup(l, f)$mlbam_id
+mlb_id
+Justin Verlander
+Clayton Kershaw
+Kenley Jansen
+Max Scherzer
+Craig Kimbrel
+
+heat_plot("Kershaw", "Clayton", data_tot)
+
+pitch_freq("Kershaw", "Clayton", data_2017)
+```
+
+```{r}
+d <- data_2017 %>%
+  filter(type == "X")
+
+id <-playerid_lookup("Altuve", "Jose")$mlbam_id
+p_d <- d %>%
+  filter()
+```
+```{r}
+#Dylan Cease low data
+data_Cease <- sc2 %>%
+  filter(Name == "Dylan Cease")
+
+data_Alcantara <- sc2 %>%
+  filter(Name == "Sandy Alcantara")
+
+data_pitcher_id %>%
+  filter(Name == "Dylan Cease")
+
+sc %>%
+  filter(pitcher == 656302)
+
+data_pitcher_id %>%
+  filter(Name == "Sandy Alcantara")
+
+sc %>% 
+  filter(batter == 660271)
+```
+
+```{r}
+#Create heat map for hits allowed per zone
+heat_plot <- function(data){
+  #Home plate is 17 inches wide, and ball is 9 inches in circumference. Horizontal edges of the strike zone is + or - 0.947 feet (165).
+  top_strike_zone <- 3.6
+  bottom_strike_zone <- 1.5
+  inside_strike_zone <- -0.95
+  outside_strike_zone <- 0.95
+  strike_zone <- data.frame(
+    x=c(inside_strike_zone, inside_strike_zone, outside_strike_zone, outside_strike_zone, inside_strike_zone),
+    y=c(bottom_strike_zone, top_strike_zone, top_strike_zone, bottom_strike_zone, bottom_strike_zone)
+  )
+  
+  data <- data %>%
+    mutate(Hit = ifelse(events %in% c("single", "double", "triple", "home_run"), 1, 0))
+  
+  # implement the GAM fit (logistic link)
+  fit <- gam(Hit ~ s(plate_x, plate_z), family = binomial, data = player_data)
+  
+  # find predicted probabilities over a 50 x 50 grid
+  x <- seq(-1.5, 1.5, length.out=50)
+  y <- seq(0.5, 5, length.out=50)
+  data.predict <- data.frame(plate_x = c(outer(x, y * 0 + 1)),
+                             plate_z = c(outer(x * 0 + 1, y)))
+  
+  predicted_data <- fit %>%
+  augment(type.predict = "response", newdata = data.predict)
+
+  # construct tile plot with strike zone boundary line
+  ggplot(predicted_data, aes(plate_x, plate_z)) + 
+    geom_tile(aes(fill = .fitted)) + 
+    scale_fill_distiller(palette = "Spectral") + 
+    geom_path(data = strike_zone, aes(x, y)) +
+    coord_fixed() +
+    ggtitle(paste(playerFirst, playerLast))
+  
+}
+
+
+```
+    
+      ggplot(predicted_data, aes(plate_x, plate_z)) + 
+    geom_point(aes(color = .fitted)) +
+    scale_colour_gradientn(colours = rainbow(20)) +
+    geom_path(data = strike_zone, aes(x, y)) +
+    coord_fixed() +
+    ggtitle(paste(playerFirst, playerLast, year))
+```{r}
+#Heat map for frequency of pitch location
+
+pitch_freq <- function(playerLast, playerFirst, data) {
+  
+  #Strike zone
+  top_strike_zone <- 3.6
+  bottom_strike_zone <- 1.5
+  inside_strike_zone <- -0.95
+  outside_strike_zone <- 0.95
+  strike_zone <- data.frame(
+  x=c(inside_strike_zone, inside_strike_zone, outside_strike_zone, outside_strike_zone, inside_strike_zone),
+  y=c(bottom_strike_zone, top_strike_zone, top_strike_zone, bottom_strike_zone, bottom_strike_zone)
+  )
+  
+  # only consider events that are official at-bats
+  data <- data %>%
+    filter(type == "X",
+           !is.na(plate_x),
+           !is.na(plate_z))
+  
+  # convert pitcher name to id
+  mlb_id <- playerid_lookup(playerLast, playerFirst)$mlbam_id
+  
+  #Filter data to selected pitcher of selected year
+  player_data <- data %>%
+    filter(pitcher == mlb_id)
+
+  #Divide zone into box of 0.1 (ft^2)
+  player_data <- data %>%
+    mutate(plate_x_tenth = round(plate_x, 1),
+           plate_z_tenth = round(plate_z, 1))
+ 
+  #mutate(plate_x,z_tenth = 0.05 * round(plate_x_tenth / 0.05, 0)) if more data is needed
+
+  #Count the frequency of pitch in each box
+  pitch_grouped <- player_data %>%
+    group_by(plate_x_tenth, plate_z_tenth) %>%
+    summarize(freq = n())
+
+  ggplot(pitch_grouped, aes(plate_x_tenth, plate_z_tenth)) +
+    geom_tile(aes(fill = freq)) +
+    geom_path(data = strike_zone, aes(x, y)) +
+    scale_fill_distiller(palette = "Spectral") +
+    coord_fixed() +
+    xlim(c(-1.5, 1.5)) +
+    ylim(c(0.5, 5))
+}
+
+
+```
+
+
+```{r}
+d2 <- d %>%
+  mutate(plate_x_tenth = round(plate_x, 1),
+         plate_z_tenth = round(plate_z, 1))
+
+d2_grouped <- d2 %>%
+  group_by(plate_x_tenth, plate_z_tenth) %>%
+  summarize(freq = n())
+  
+ggplot(d2_grouped, aes(plate_x_tenth, plate_z_tenth)) +
+    geom_tile(aes(fill = freq)) +
+    scale_fill_continuous() +
+    coord_fixed() +
+    xlim(c(-1.5, 1.5)) +
+    ylim(c(0.5, 5))
+
+max(d2_grouped$freq)
+
+d2_grouped %>%
+  filter(freq == 22197)
+
+
+ggplot(d2_grouped) + geom_histogram(aes(freq))
+
+
+data_pitcher <- bref_daily_pitcher("2015-04-05", "2022-10-05")
+
+data_pitcher_id <- data_pitcher %>%
+  select(bbref_id, Name)
+
+ids <- data_pitcher_id$bbref_id
+id_double <- vector("list", length(ids))
+for (i in 1:length(ids)) {
+  id_double[i] <- as.double(ids[i])
+}
+
+id_double_vec <- unlist(id_double)
+
+data_pitcher_id$pitcher <- id_double_vec
+
+data_tot2 <- inner_join(data_tot, data_pitcher_id, by = c("pitcher"))
+
+unique(data_tot2$Name)
+```
+
+
+```{r}
+#Justin Verlander, Clayton Kershaw, Kenley Jansen, Max Scherzer, Craig Kimbrel
+
+data_Kershaw_2018 <- sc2 %>%
+  filter(game_year == 2018,
+         Name == "Clayton Kershaw",
+         type == "X",
+         !is.na(plate_x),
+         !is.na(plate_z))
+
+
+data_Scherzer <- sc2 %>%
+  filter(Name == "Max Scherzer",
+         game_year == 2017,
+         type == "X",
+         !is.na(plate_x),
+         !is.na(plate_z))
+
+hit_likely(data_Scherzer)
+year <- subset(sc2, game_year %in% 2015)
+year <- select(year, "Name")
+
+typeof(data_pitcher$bbref_id[1])
+
+sc2 %>% dplyr::filter(home == "") %>%
+      select(Name)
+
+unique(sc2$launch_angle)
+
+sc5 <- sc4 %>%
+    mutate(plate_x_tenth = 0.05 * round(plate_x / 0.05, 0),
+           plate_z_tenth = 0.05 * round(plate_z / 0.05, 0))
+```
+
+
+```{r}
+sc4 %>% dplyr::filter(Name == " Shohei Ohtani",
+                      pitch_type == "FF") -> Ohtani_FF
+
+Ohtani_data <- Ohtani_FF %>%
+    mutate(plate_x_tenth = 0.15 * round(plate_x / 0.15, 0),
+           plate_z_tenth = 0.15 * round(plate_z / 0.15, 0))
+ 
+  #mutate(plate_x,z_tenth = 0.05 * round(plate_x,z / 0.05, 0)) if more data is needed
+
+  #Count the frequency of pitch in each box
+  Ohtani_data <- Ohtani_data %>%
+    group_by(plate_x_tenth, plate_z_tenth) %>%
+    summarize(freq = n())
+
+  plot_0.05 <- ggplot(Ohtani_data, aes(plate_x_tenth, plate_z_tenth)) +
+    geom_tile(aes(fill = freq)) +
+    scale_fill_distiller(palette = "YlGnBu") +
+    geom_path(data = strike_zone, aes(x, y)) +
+    coord_fixed() +
+    xlim(c(-1.5, 1.5)) +
+    ylim(c(0.5, 5))
+  
+  
+  Ohtani_data2 <- Ohtani_FF %>%
+    mutate(plate_x_tenth = 0.15 * round(plate_x / 0.15, 0),
+           plate_z_tenth = 0.15 * round(plate_z / 0.15, 0))
+ 
+
+  #Count the frequency of pitch in each box
+  Ohtani_data2 <- Ohtani_data2 %>%
+    group_by(plate_x_tenth, plate_z_tenth) %>%
+    summarize(freq = n())
+
+  plot_0.1 <- ggplot(Ohtani_data2, aes(plate_x_tenth, plate_z_tenth)) +
+    geom_tile(aes(fill = freq)) +
+    scale_fill_viridis_c(option = "B", direction = -1) +
+    geom_path(data = strike_zone, aes(x, y)) +
+    coord_fixed() +
+    xlim(c(-1.5, 1.5)) +
+    ylim(c(0.5, 5))
+  
+  
+  Ohtani_data3 <- Ohtani_FF %>%
+    mutate(plate_x_tenth = 0.15 * round(plate_x / 0.15, 0),
+           plate_z_tenth = 0.15 * round(plate_z / 0.15, 0))
+ 
+  #mutate(plate_x,z_tenth = 0.05 * round(plate_x,z / 0.05, 0)) if more data is needed
+
+  #Count the frequency of pitch in each box
+  Ohtani_data3 <- Ohtani_data3 %>%
+    group_by(plate_x_tenth, plate_z_tenth) %>%
+    summarize(freq = n())
+
+  plot_0.15 <- ggplot(Ohtani_data3, aes(plate_x_tenth, plate_z_tenth)) +
+    geom_tile(aes(fill = freq)) +
+    scale_fill_viridis_c(option = "C", direction = -1) +
+    geom_path(data = strike_zone, aes(x, y)) +
+    coord_fixed() +
+    xlim(c(-1.5, 1.5)) +
+    ylim(c(0.5, 5))
+
+  
+  Ohtani_data4 <- Ohtani_FF %>%
+    mutate(plate_x_tenth = 0.15 * round(plate_x / 0.15, 0),
+           plate_z_tenth = 0.15 * round(plate_z / 0.15, 0))
+ 
+  #mutate(plate_x,z_tenth = 0.05 * round(plate_x,z / 0.05, 0)) if more data is needed
+
+  #Count the frequency of pitch in each box
+  Ohtani_data4 <- Ohtani_data4 %>%
+    group_by(plate_x_tenth, plate_z_tenth) %>%
+    summarize(freq = n())
+
+  plot_0.2 <- ggplot(Ohtani_data4, aes(plate_x_tenth, plate_z_tenth)) +
+    geom_tile(aes(fill = freq)) +
+    scale_fill_distiller(palette = "Spectral") +
+    geom_path(data = strike_zone, aes(x, y)) +
+    coord_fixed() +
+    xlim(c(-1.5, 1.5)) +
+    ylim(c(0.5, 5))
+  
+  library(ggpubr)
+ggarrange(plot_0.05, plot_0.1, plot_0.15, plot_0.2)
+```
+```{r}
+#Import pitcher's name from baseballr
+# data_pitcher <- bref_daily_pitcher("2015-04-05", "2022-10-05")
+# data_pitcher <- bref_daily_pitcher("2022-04-05", "2022-10-05")
+# 
+# #Change pitcher's id type from character to double
+# data_pitcher_id <- data_pitcher %>%
+#   select(bbref_id, Name)
+# 
+# ids <- data_pitcher_id$bbref_id
+# id_double <- vector("list", length(ids))
+# for (i in 1:length(ids)) {
+#   id_double[i] <- as.double(ids[i])
+# }
+# 
+# id_double_vec <- unlist(id_double)
+# 
+# data_pitcher_id$pitcher <- id_double_vec
+
+#Combine pitcher name with data
+# sc2 <- inner_join(sc, data_pitcher_id, by = c("pitcher"))
+
+```
+
+
+
+## Comparing Plots
+```{r}
+#Obtain data for players we are comparing: Use every data in 2018 ~ 2022 to obtain meaningful hit percentage heat plot
+#Shohei Ohtani: 2018, 2021, 2022
+Ohtani_data <- sc4 %>% filter(Name == "Shohei Ohtani",
+                              pitch_type == "SL")
+
+Ohtani_data2 <- sc5 %>% filter(Name == "Shohei Ohtani",
+                               game_year == 2022,
+                              pitch_type == "SL")
+
+#Mitch Keller: 2021, 2022
+Keller_data <- sc4 %>% filter(Name == "Mitch Keller",
+                              pitch_type == "SL")
+
+Keller_data2 <- sc5 %>% filter(Name == "Mitch Keller",
+                              pitch_type == "SL")
+
+#Aroldis Chapman: 2018, 2019, 2021
+Chapman_data <- sc4 %>% filter(Name == "Aroldis Chapman",
+                             pitch_type == "FF")
+
+Chapman_data2 <- sc5 %>% filter(Name == "Aroldis Chapman",
+                             pitch_type == "FF")
+
+Chapman_data3 <- sc4 %>% filter(Name == "Aroldis Chapman",
+                             pitch_type == "SL")
+
+Chapman_data4 <- sc5 %>% filter(Name == "Aroldis Chapman",
+                             pitch_type == "SL")
+
+#Tyler Rogers: 2021, 2022
+Rogers_data <- sc4 %>% filter(Name == "Tyler Rogers",
+                             pitch_type == "FF")
+
+Rogers_data2 <- sc5 %>% filter(Name == "Tyler Rogers",
+                             pitch_type == "FF")
+
+Rogers_data3 <- sc4 %>% filter(Name == "Tyler Rogers",
+                             pitch_type == "SL")
+
+Rogers_data4 <- sc5 %>% filter(Name == "Tyler Rogers",
+                             pitch_type == "SL")
+
+```
+
+
+```{r}
+library(ggpubr)
+#Ohtani vs Keller: SL
+Ohtani_1 <- hit_likely(Ohtani_data) + labs(title = "Shohei Ohtani SL Hit Percentage")
+Ohtani_2 <- pitch_freq(Ohtani_data2) + labs(title = "Shohei Ohtani SL Pitch Frequency")
+Keller_1 <- hit_likely(Keller_data) + labs(title = "Mitch Keller SL Hit Percentage")
+Keller_2 <- pitch_freq(Keller_data2) + labs(title = "Mitch Keller SL Pitch Frequency")
+ggarrange(Ohtani_1, Ohtani_2, Keller_1, Keller_2, ncol = 2)
+
+```
+Comments:
+- Keller tends to throw sliders on outside corner (for righties) into the ball zone while Ohtani throws it in various locations within the strike zone.
+- Considering only strikes, Ohtani's slider has overall lower hit percentage than Keller's slider.
+- Ohtani might choose to throw sliders in any location within the strike zone because it breaks a lot, while Keller has to throw it in outside corner (for righties) due to its lack of movements.
+
+
+```{r}
+#Chapman (lefty) vs Rogers (side-arm): FF
+Chapman_1 <- hit_likely(Chapman_data) + labs(title = "Aroldis Chapman FF Hit Percentage")
+Chapman_2 <- pitch_freq(Chapman_data2) + labs(title = "Aroldis Chapman FF Pitch Frequency")
+Rogers_1 <- hit_likely(Rogers_data) + labs(title = "Tyler Rogers FF Hit Percentage")
+Rogers_2 <- pitch_freq(Rogers_data2) + labs(title = "Tyler Rogers FF Pitch Frequency")
+ggarrange(Chapman_1, Chapman_2, Rogers_1, Rogers_2, ncol = 2)
+```
+Comments:
+- Rogers tends to throw fastball in low strike zones to stay safe since he throws a slow fastball, while Chapman throws it from top to bottom of the strike zone because his high velocity makes it hard to hit in any location.
+- Chapman's hit percentage is low in the higher part of the strike zone, which signifies that fastball with high velocity is harder to hit in higher locations.
+- Rogers hit percentage is around 0.3 ~ 0.5 for locations that he throws often, which is higher than expected.
+
+
+```{r}
+#Chapman (lefty) vs Rogers (side-arm): SL
+Chapman_3 <- hit_likely(Chapman_data3) + labs(title = "Aroldis Chapman SL Hit Percentage")
+Chapman_4 <- pitch_freq(Chapman_data4) + labs(title = "Aroldis Chapman SL Pitch Frequency")
+Rogers_3 <- hit_likely(Rogers_data3) + labs(title = "Tyler Rogers SL Hit Percentage")
+Rogers_4 <- pitch_freq(Rogers_data4) + labs(title = "Tyler Rogers SL Pitch Frequency")
+ggarrange(Chapman_3, Chapman_4, Rogers_3, Rogers_4, ncol = 2)
+```
+Comments: 
+- Rogers overall hit percentage for sliders across the strike zone is very low
+- Chapman tends to throw sliders on low inside corner (for righties) into the ball zone which tends to be most effective place to throw for lefty pitchers.
+- Rogers tends to throw sliders slightly more on high outside corner (for righties) which is reasonable since he is a right side-arm pitcher and his slider will tail away from righty batters in that location, making it hard to hit.
+
+
+```{r}
+#Aaron Nola: 2018, 2019, 2021, 2022
+Nola_data <- sc4 %>% filter(Name == "Aaron Nola",
+                             pitch_type == "FF")
+
+Nola_data2 <- sc5 %>% filter(Name == "Aaron Nola",
+                             pitch_type == "FF")
+
+#Jacob deGrom: 2018, 2019, 2021, 2022
+deGrom_data <- sc4 %>% filter(Name == "Jacob deGrom",
+                             pitch_type == "FF")
+
+deGrom_data2 <- sc5 %>% filter(Name == "Jacob deGrom",
+                             pitch_type == "FF")
+
+#Patrick Corbin: 2018, 2019, 2021, 2022
+Corbin_data <- sc4 %>% filter(Name == "Patrick Corbin",
+                             pitch_type == "FF")
+
+Corbin_data2 <- sc5 %>% filter(Name == "Patrick Corbin",
+                             pitch_type == "FF")
+
+```
+
+```{r}
+#Nola vs Corbin (lefty)
+Nola_1 <- hit_likely(Nola_data) + labs(title = "Aaron Nola FF Hit Percentage")
+Nola_2 <- pitch_freq(Nola_data2) + labs(title = "Aaron Nola FF Pitch Frequency")
+Corbin_1 <- hit_likely(Corbin_data) + labs(title = "Patrick Corbin FF Hit Percentage")
+Corbin_2 <- pitch_freq(Corbin_data2) + labs(title = "Patrick Corbin FF Pitch Frequency")
+ggarrange(Nola_1, Nola_2, Corbin_1, Corbin_2, ncol = 2)
+
+```
+```{r}
+#Nola vs deGrom (lefty)
+Nola_1 <- hit_likely(Nola_data) + labs(title = "Aaron Nola FF Hit Percentage")
+Nola_2 <- pitch_freq(Nola_data2) + labs(title = "Aaron Nola FF Pitch Frequency")
+deGrom_1 <- hit_likely(deGrom_data) + labs(title = "Jacob deGrom FF Hit Percentage")
+deGrom_2 <- pitch_freq(deGrom_data2) + labs(title = "Jacob deGrom FF Pitch Frequency")
+ggarrange(Nola_1, Nola_2, deGrom_1, deGrom_2, ncol = 2)
+
+```
+
+We are going to use a simple procedure to assess predictive performance. Run the code below to split p_data2 into a model training data set train and a model testing data set test.
+```{r}
+#Split
+p_data3 <- p_data2
+p_data3 <- p_data2 %>%
+  filter(!is.na(fastball_avg_speed),
+         !is.na(offspeed_avg_speed), 
+         !is.na(offspeed_avg_break), 
+         !is.na(in_zone_percent), 
+         !is.na(edge_percent))
+
+set.seed(13)
+ind <- sample(1:nrow(p_data2), size = 300, replace = FALSE)
+train <- p_data3[ind, ]
+test <- p_data3[-ind, ]
+
+m1 <- lm(WAR ~ p_k_percent + p_bb_percent + f_strike_percent, data = train)
+test1 <- test
+test1$Prediction <- predict(m1, test1)
+sqrt(mean((test1$WAR - test1$Prediction)^2))
+
+
+m2 <- lm(WAR ~ p_k_percent + p_bb_percent + fastball_avg_speed + in_zone_percent + edge_percent, data = train)
+test2 <- test
+test2$Prediction <- predict(m2, test2)
+sqrt(mean((test2$WAR - test2$Prediction)^2))
+
+#Other variables that we considered: offspeed_avg_speed, offspeed_avg_break, f_strike_percent, fastball_avg_break
+```
+
+## Conclusion:
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

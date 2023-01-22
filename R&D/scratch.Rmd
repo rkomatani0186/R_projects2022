@@ -1,0 +1,161 @@
+---
+title: "Untitled"
+author: "Riku Komatani"
+date: "2023-01-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+sc_2021 <- read_csv("C:/Users/12244/STAT430/statcast/2021.csv")
+
+sc_2021 <- sc_2021 %>%
+  filter(events %in% c("single", "double", "triple", "home_run", "strikeout", "force_out", "field_out",  "grounded_into_double_play", "sac_fly", "sac_fly_double_play", "strikeout_double_play", "double_play", "triple_play", "hit_by_pitch", "walk") | description %in% c("ball", "called_strike", "swinging_strike", "swinging_strike_blocked"))
+
+
+sc_2021 %>% select(events, description)
+
+sc_2021 <- sc_2021 %>%
+  mutate(weights = case_when(description == "ball" ~ 0.052, 
+                             is.na(events) & description %in% c("swinging_strike", "called_strike") ~ -0.046,
+                             events == "single" ~ 0.469,
+                             events == "double" ~ 0.776,
+                             events == "triple" ~ 1.051,
+                             events == "home_run" ~ 1.377,
+                             events == "walk" ~ 0.222,
+                             events == "hit_by_pitch" ~ 0.390,
+                             events %in% c("force_out", "field_out", "sac_fly", "strikeout") ~ -0.247,
+                             events %in% c("strikeout_double_play", "double_play", "sac_fly_double_play") ~ -0.931,
+                             events == "triple_play" ~ -1.719))
+
+sc_2021 <- sc_2021 %>%
+  filter(!(is.na(weights)))
+
+sc_2021_2 <- sc_2021 %>%
+  mutate(release_pos_x_adj = ifelse(p_throws == "R", release_pos_x, - release_pos_x),
+         pfx_x_adj = ifelse(p_throws == "R", pfx_x, - pfx_x),
+         spin_axis_adj = ifelse(p_throws == "R", spin_axis, 360 - spin_axis)) %>%
+  filter(!is.na(release_speed),
+         !is.na(release_pos_z),
+         !is.na(release_pos_x_adj),
+         !is.na(release_extension),
+         !is.na(pfx_x_adj),
+         !is.na(pfx_z),
+         !is.na(release_spin_rate),
+         !is.na(spin_axis_adj))
+
+sc_2021_2_FF <- sc_2021_2 %>%
+  filter(pitch_type == "FF")
+
+sc_2021_2_FF$id = 1:nrow(sc_2021_2_FF)
+train_sc_2021_FF = sc_2021_2_FF %>% dplyr::sample_frac(0.80)
+test_sc_2021_FF = dplyr::anti_join(sc_2021_2_FF, train_sc_2021_FF, by = 'id')
+train_sc_2021_FF = train_sc_2021_FF %>% select(-c(id, pitch_type))
+test_sc_2021_FF = test_sc_2021_FF %>% select(-c(id, pitch_type))
+
+forest_FF = ranger(weights ~ release_speed + release_pos_z + release_pos_x_adj + release_extension + pfx_x_adj + pfx_z + release_spin_rate + spin_axis_adj + plate_x + plate_z,
+                            data = train_sc_2021_FF,
+                            num.trees = 100,
+                            mtry = 3,
+                            min.node.size = 1,
+                            classification = FALSE,
+                            importance = "permutation")
+
+rmse(test_sc_2021_FF$weights, predict(forest_FF, test_sc_2021_FF)$prediction)
+
+sc_2021_FF_pred = predict(forest_FF, data = test_sc_2021_FF)
+#sqrt(mean((test_sc_lw_2021_FF$RV - sc_lw_2021_FF_pred$prediction)^2))
+
+test_sc_2021_FF$pred_RV = sc_2021_FF_pred$predictions
+
+ggplot(test_sc_2021_FF) + geom_point(aes(pred_RV, weights))
+
+forest_FF$variable.importance
+
+```
+```{r}
+
+sc_2019 <- read_csv("C:/Users/12244/STAT430/statcast/2019.csv")
+
+sc_2019 <- sc_2019 %>%
+  filter(events %in% c("single", "double", "triple", "home_run", "force_out", "field_out",  "grounded_into_double_play", "sac_fly", "sac_fly_double_play", "double_play", "triple_play"))
+  # filter(events %in% c("single", "double", "triple", "home_run", "force_out", "field_out", "grounded_into_double_play", "double_play", "triple_play"))
+
+sc_2019 <- sc_2019 %>%
+  mutate(play_name = case_when(events == "single" ~ "Single",
+                               events == "double" ~ "Double",
+                               events == "triple" ~ "Triple",
+                               events == "home_run" ~ "Home run",
+                               events %in% c("force_out", "field_out", "grounded_into_double_play", "sac_fly", "sac_fly_double_play", "double_play", "triple_play") ~ "Generic Out",
+                               events %in% c("strikeout", "strikeout_double_play") & description == "swinging_strike" ~ "Strikeout SwingandMiss"))
+
+#Filter data to only in-play or strikeout swingandmiss
+sc_2019 <- sc_2019 %>%
+  filter(!is.na(play_name))
+
+#Join linear weights with Statcast data
+sc_lw_2019 <- sc_2019 %>%
+  inner_join(linear_weights, by = "play_name")
+
+#Adjust horizontal data to account for R and L pitchers
+sc_lw_2019 <- sc_lw_2019 %>%
+  mutate(release_pos_x_adj = ifelse(p_throws == "R", release_pos_x, - release_pos_x),
+         pfx_x_adj = ifelse(p_throws == "R", pfx_x, - pfx_x),
+         spin_axis_adj = ifelse(p_throws == "R", spin_axis, 360 - spin_axis)) %>%
+  filter(!is.na(release_speed),
+         !is.na(release_pos_z),
+         !is.na(release_pos_x_adj),
+         !is.na(release_extension),
+         !is.na(pfx_x_adj),
+         !is.na(pfx_z),
+         !is.na(release_spin_rate),
+         !is.na(spin_axis_adj),
+         !is.na(launch_speed))
+
+```
+
+
+## Run Expectancy Model using Ranger for FF
+```{r}
+sc_lw_2019_FF <- sc_lw_2019 %>%
+  filter(pitch_type == "FF")
+
+#splitting into training and testing data or use all data as train
+sc_lw_2019_FF$id = 1:nrow(sc_lw_2019_FF)
+train_sc_lw_2019_FF = sc_lw_2019_FF %>% dplyr::sample_frac(0.80)
+test_sc_lw_2019_FF = dplyr::anti_join(sc_lw_2019_FF, train_sc_lw_2019_FF, by = 'id')
+train_sc_lw_2019_FF = train_sc_lw_2019_FF %>% select(-c(id, pitch_type))
+test_sc_lw_2019_FF = test_sc_lw_2019_FF %>% select(-c(id, pitch_type))
+
+#release_speed + release_pos_z + release_pos_x_adj + release_extension + pfx_x_adj + pfx_z + release_spin_rate + spin_axis_adj + plate_x + plate_z
+
+forest_FF = ranger(launch_speed ~ release_speed + release_pos_z + release_pos_x_adj + release_extension + pfx_x_adj + pfx_z + release_spin_rate + spin_axis_adj + plate_x + plate_z,
+                            data = train_sc_lw_2019_FF,
+                            num.trees = 100,
+                            mtry = 3,
+                            min.node.size = 1,
+                            classification = FALSE,
+                            importance = "permutation")
+
+rmse(test_sc_lw_2019_FF$launch_speed, predict(forest_FF, test_sc_lw_2019_FF)$prediction)
+
+
+sc_lw_2019_FF_pred = predict(forest_FF, data = test_sc_lw_2019_FF)
+
+test_sc_lw_2019_FF$pred_ev= sc_lw_2019_FF_pred$predictions
+
+ggplot(test_sc_lw_2019_FF) + geom_point(aes(pred_ev, launch_speed))
+
+model1 <- lm(launch_speed ~ pred_ev, data = test_sc_lw_2019_FF)
+
+summary(model1)$r.squared
+forest_FF$variable.importance
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

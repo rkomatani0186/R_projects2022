@@ -1,0 +1,163 @@
+---
+title: "Stuff+ Statcast"
+author: "Colin Alberts"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries are below.
+
+```{r}
+library(RMySQL)
+library(tidyverse)
+#library(illinibaseball)
+library(xgboost)
+library(ranger)
+library(caret)
+#library(ElemStatLearn)
+library(car)
+library(data.table)
+```
+
+EV Cleaner.
+
+```{r}
+ev_cleaner = function(vec) {
+  temp_probs = matrix(nrow = length(vec) / 6,
+                      ncol = 6)
+  counter = 1
+  #I think this is right
+  for (i in 1:nrow(temp_probs)) {
+    temp_probs[i, ] = vec[counter:(counter + 5)]
+    counter = counter + 6
+  }
+  
+  #creating expected slugging table and calculating it
+  temp_frame = as.data.table(temp_probs)
+  colnames(temp_frame) = c("out", "strikeout","single", "double", "triple", "home_run")
+  temp_frame = temp_frame %>% #values below from Riku analysis
+    mutate(erv = out * -0.2722313 + strikeout * -.2763987 + single * 0.4650907 + double * 0.7712079 + triple * 1.0416029 + home_run * 1.3872567) %>% 
+    select(erv)
+  return(temp_frame$erv)
+}
+```
+
+
+Loading and cleaning data.
+
+```{r}
+#d17 = fread("/Users/colinalberts/Desktop/Illinois Baseball Analytics/practice/Colin A/Statcast Data.2017.csv")
+d18 = fread("C:/Users/12244/STAT430/statcast/2018.csv")
+d19 = fread("C:/Users/12244/STAT430/statcast/2019.csv")
+d21 = fread("C:/Users/12244/STAT430/statcast/2021.csv")
+
+#combining all data
+statcast_data = as.data.table(rbind(d18, d19, d21))
+statcast_data = statcast_data[events %in% c("single", "double", "triple", "home_run", "strikeout", "force_out", "field_out", "grounded_into_double_play", "sac_fly", "sac_fly_double_play", "strikeout_double_play", "double_play", "triple_play")]
+
+#filtering data for desired variables and mutating, indicator for events
+statcast_data = statcast_data %>%
+  # filter(!(is.na(launch_speed)),
+  #        !(is.na(launch_angle))) %>%
+  select(release_speed, release_pos_z, release_pos_x, release_extension, 
+         pfx_x, pfx_z, release_spin_rate, spin_axis, events, pitch_type, 
+         description, p_throws, pitcher) %>%
+  mutate(play_name = case_when(events %in% c("force_out", "field_out", "grounded_into_double_play", "sac_fly",
+                                             "sac_fly_double_play", "double_play", "triple_play") ~ "out",
+                               events %in% c("strikeout", "strikeout_double_play") ~ "strikeout",
+                               events %in% c("single", "double", "triple", "home_run") ~ events)) %>%
+  mutate(play_indicator = case_when(play_name == "out" ~ 0,
+                                    play_name == "strikeout" ~ 1,
+                                    play_name == "single" ~ 2,
+                                    play_name == "double" ~ 3,
+                                    play_name == "triple" ~ 4,
+                                    play_name == "home_run" ~ 5)) %>%
+  # group_by(pitcher, pitch_type) %>%
+  # filter(n() >= 15) %>%
+  # ungroup() %>%
+  na.omit() %>%
+  select(-c(description, events, play_name, pitcher))
+```
+
+RHP fastball filtering and XGBoost preparation.
+
+```{r}
+#filtering to RHP and fourseam fastball
+RHP_fastball_data = statcast_data %>%
+  filter(pitch_type == "FF",
+         p_throws == "R") %>%
+  select(-c(pitch_type, p_throws))
+
+#calculating weights and putting in table
+play_weights = as.vector(table(RHP_fastball_data$play_indicator) / nrow(RHP_fastball_data))
+
+
+#data splitting
+RHP_fastball_data$id = 1:nrow(RHP_fastball_data)
+train_RHP_fastball = RHP_fastball_data %>%
+  dplyr::sample_frac(0.80)
+test_RHP_fastball = dplyr::anti_join(RHP_fastball_data, train_RHP_fastball, by = 'id') %>% select(-id); train_RHP_fastball = train_RHP_fastball %>% select(-id)
+
+train_play_weights = train_RHP_fastball %>% 
+  mutate(play_weight = case_when(play_indicator == "0" ~ play_weights[1],
+                                 play_indicator == "1" ~ play_weights[2],
+                                 play_indicator == "2" ~ play_weights[3],
+                                 play_indicator == "3" ~ play_weights[4],
+                                 play_indicator == "4" ~ play_weights[5],
+                                 play_indicator == "5" ~ play_weights[6],)) %>%
+  select(play_weight); train_play_weights = as.vector(train_play_weights$play_weight)
+
+test_play_weights = test_RHP_fastball %>% 
+  mutate(play_weight = case_when(play_indicator == "0" ~ play_weights[1],
+                                 play_indicator == "1" ~ play_weights[2],
+                                 play_indicator == "2" ~ play_weights[3],
+                                 play_indicator == "3" ~ play_weights[4],
+                                 play_indicator == "4" ~ play_weights[5],
+                                 play_indicator == "5" ~ play_weights[6],)) %>%
+  select(play_weight); test_play_weights = as.vector(test_play_weights$play_weight)
+
+train_RHP_fastball_x = data.matrix(train_RHP_fastball[, -9]) #9 is play indicator
+train_RHP_fastball_y = data.matrix(train_RHP_fastball[, 9])
+
+test_RHP_fastball_x = data.matrix(test_RHP_fastball[, -9])
+test_RHP_fastball_y = data.matrix(test_RHP_fastball[, 9])
+
+
+xgb_train = xgb.DMatrix(data = train_RHP_fastball_x, label = train_RHP_fastball_y, weight = train_play_weights)
+xgb_test = xgb.DMatrix(data = test_RHP_fastball_x, label = test_RHP_fastball_y, weight = test_play_weights)
+```
+
+RHP fastball XGBoost model.
+
+```{r}
+watchlist = list(train = xgb_train, 
+                 eval = xgb_test)
+
+params = list(objective = "multi:softprob", #multi:softprob
+              eval_metric = "aucpr", #auc or aucpr
+              num_class = 6,
+              max_depth = 8,
+              eta = 0.2)
+
+RHP_fastball_xgb = xgb.train(data = xgb_train,
+                             params = params,
+                             nround = 20000,
+                             early_stopping_rounds = 1,
+                             verbose = 0,
+                             watchlist = watchlist)
+
+pred = predict(RHP_fastball_xgb, test_RHP_fastball_x)
+
+predicted_xrvs = ev_cleaner(pred)
+summary(predicted_xrvs)
+hist(predicted_xrvs,
+     breaks = 50)
+
+z_score = scale(predicted_xrvs, center = mean(predicted_xrvs)); stuff_plus = 200 - sapply(z_score, pnorm) * 200
+hist(stuff_plus,
+     breaks = 30)
+```

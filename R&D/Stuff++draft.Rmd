@@ -1,0 +1,327 @@
+---
+title: "Stuff++ Research"
+output: html_document
+date: "2022-10-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Research
+
+10/13/2022
+  
+**Sweeper: slider with extra horizontal break**
+https://www.si.com/mlb/2022/05/05/rise-of-the-sweeper-the-opener
+"Hitters have made adjustments on the top of the strike zone and the bottom, so we are seeing more pitchers go left and right"
+
+https://sports.yahoo.com/hes-throwing-a-what-the-sweeper-is-mlb-latest-pitching-weapon-dodgers-yankees-220657765.html?fr=yhssrp_catchall
+"Because of how balls thrown with that two-seamed grip interact with the air when spinning, sweepers move in ways that hitters’ eyes and brains don’t expect."
+
+
+https://theathletic.com/2798395/2021/08/31/command-stuff-report-why-should-anyone-care-about-stuff/
+Pitching+ involves Command+, Location+, Stuff+
+Command+ predicts innings pitched per appearance better than Stuff+
+- Command+ doesn’t add any more information year to year over - Location+
+- Location+ is more important on the per-pitch level than Stuff+
+- Stuff+ is more predictive of ERA than Location+
+- Stuff+ is stickier year to year than Location+
+
+**Stuff++**
+https://maxsportingstudio.com/introducing-stuff-location-and-pitching/
+Factors to consider:
+- velocity
+- vertical movement / vertical movement difference off FF
+- horizontal movement
+- spin efficiency
+- release position
+
+
+**Hit-Type Boundaries**
+https://community.fangraphs.com/evaluating-statcast-hit-type-boundaries/
+Under 10 degrees: grounder
+10-25: liner
+25 to 50: fly ball
+over 50: a pop-up
+
+
+**Approach**
+Consider two factors: 
+- Pitch factors (velocity, vertical/horizontal movement, etc.)
+- Hit type (Swing and miss, grounder, liner, pop-up, etc.)
+
+First, only look at pitch factors, since hit type could depend wildly on hitter's level.
+Focus on fastball pitches thrown by right handed pitchers, and build a model for that type using vertical movement and velocity.
+Then, adjust to other pitch types later on.
+
+**First Approach**
+Build a model to predict whether the result was InPlay or SwingandMiss using various pitching factors such as velocity, movements, spin, etc.
+Result: Accuracy only up to 80%
+
+**Second Approach**
+Predict run value based on flight metrics such as exit velocity and launch angle.
+
+```{r}
+#Import packages
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(plotly)
+library(reshape2)
+library(mgcv)
+library(ggpubr)
+library(metR)  
+```
+
+
+```{r}
+#Obtain data from database
+#Should we consider the ones that are swung by batter but didn't cause any play results?
+filter_db = function() {
+  con = dbConnect(MySQL(), 
+                user="mbaadmin", 
+                password="gUZSaQAAwgDRhqZPPCqa", 
+                dbname="uiuc", 
+                host="prodbaseballmysqlohio.ciurqw3b29ox.us-east-2.rds.amazonaws.com")
+
+  pitches = dbGetQuery(con, paste0("select * from tm_pitches where season in (2022, 2023)"))
+  
+  dbDisconnect(con)
+  return(pitches)
+}
+
+seasonTotals <- filter_db()
+```
+
+```{r}
+#Filter the events to only the fastball pitches that batter swung at. Classify pitch type by AutoPitchType.
+fastball_sc <- seasonTotals %>%
+  filter(!(PitchCall %in% c("BallCalled", "StrikeCalled")),
+         AutoPitchType == "Fastball")
+
+
+arm_tilt <- fastball_sc %>%
+  group_by(PitcherThrows, Tilt) %>%
+  summarize(count = n(),
+            InducedVertBreak = mean(InducedVertBreak),
+            HorzBreak = mean(HorzBreak))
+
+sinker_sc <- seasonTotals %>%
+  filter(!PitchCall %in% c("BallCalled", "StrikeCalled"),
+         AutoPitchType == "Sinker")
+
+arm_tilt_si <- sinker_sc %>%
+  group_by(PitcherThrows, Tilt) %>%
+  summarize(count = n(),
+            InducedVertBreak = mean(InducedVertBreak),
+            HorzBreak = mean(HorzBreak))
+
+
+
+#mutate(case_when(Angle < 10 ~ "Grounder", Angle >= 10 & Angle < 25 ~ "Liner", Angle >= 25 & Angle < 50 ~ "Fly Ball", Angle >= 50 ~ "Pop-up"))
+
+#Focus on useful factors
+ff_sc <- fastball_sc %>%
+  select(PitcherThrows, RelSpeed, HorzBreak, InducedVertBreak, RelHeight, Extension) %>%
+
+ff_sc %>%
+  group_by(PitcherThrows) %>%
+  summarize(RelSpeed = mean(RelSpeed),
+            HorzBreak = mean(HorzBreak),
+            InducedVertBreak = mean(InducedVertBreak),
+            RelHeight = mean(RelHeight),
+            Extension = mean(Extension),
+            num_pitches = n())
+```
+2021 Four Seam Averages:
+Handedness	Velocity	Horizontal	Vertical	Release Height	Extension
+RHP	94.1	7.5”	16.4”	5.9’	6.4’
+LHP	92.8	7.8”	16.6”	6’	6.3’
+
+Compared to MLB average:
+- velocity is lower
+- horizontal break is higher
+- induced vertical break is higher for RHP, lower for LHP
+- Release Height is about the same for RHP, lower for LHP
+- Extension is shorter
+(Pitch data for LHP might not be enough)
+
+Building Whiff% based on Velocity and Induced Vertical Break
+```{r}
+ff_RHP_sc <- fastball_sc %>%
+  filter(PitcherThrows == "Right") %>%
+  mutate(VB = 2 * round(InducedVertBreak / 2, 0),
+         velo = round(RelSpeed, 0)) %>%
+  select(RelSpeed, velo, HorzBreak, InducedVertBreak, VB, RelHeight, Extension, PitchCall, PlayResult) %>%
+  mutate(SwingandMiss = ifelse(PitchCall == "StrikeSwinging", 1, 0)) %>%
+  group_by(VB, velo) %>%
+  summarize(TotalSwingandMiss = sum(SwingandMiss),
+            TotalSwing = n(),
+            Whiff = TotalSwingandMiss / TotalSwing)
+
+
+#Convert from long format to wide format
+library(maditr)
+Whiff.Matrix <- dcast(ff_RHP_sc, velo ~ VB, sum, value.var = "Whiff") 
+
+```
+There is a general trend on Whiff percentage increasing as velocity and vertical break increases, but their isn't enough instances to build off a useful model from this data. 
+
+```{r}
+Whiff_mlb <- read.csv("C:/Users/12244/R_projects2022/R&D/Whiff_MLB.csv")
+
+
+```
+
+
+```{r}
+#Obtain MLB data from 2017, 2018, 2019, and 2021 season
+library(tidyverse)
+
+data_2017 <- read_csv("C:/Users/12244/STAT430/statcast_data/2017.csv")
+data_2018 <- read_csv("C:/Users/12244/STAT430/statcast_data/2018.csv")
+data_2019 <- read_csv("C:/Users/12244/STAT430/statcast_data/2019.csv")
+data_2021 <- read_csv("C:/Users/12244/STAT430/statcast_data/2021.csv")
+
+data_tot <- rbind(data_2017, data_2018, data_2019, data_2021)
+
+inplay_data <- data_tot %>%
+  filter(!is.na(launch_speed),
+         !is.na(launch_angle),
+         !is.na(woba_value),
+         !(events %in% c("catcher_interf", "game_advisory")),
+         !is.na(hit_distance_sc))
+
+#out: 0, catcher interference: 0.7, single: 0.9, double: 1.25, triple: 1.6, home run: 2.0
+```
+
+
+```{r}
+#Contour plot
+p <- ggplot(inplay_data, aes(launch_angle, launch_speed, z = woba_value, colour = stat(level))) +
+  geom_contour_fill(binwidth = 0.1)
+
+p
+```
+
+```{r}
+#Linear regression model
+
+model <- lm(woba_value ~ launch_speed, data = inplay_data)
+
+inplay_data$Prediction <- predict(model)
+
+sqrt(mean((inplay_data$woba_value - inplay_data$Prediction)^2))
+
+```
+
+
+```{r}
+#Contour plot
+fig <- plot_ly(x = inplay_data$launch_angle, y = inplay_data$launch_speed,
+               z = inplay_data$woba_value, type = "contour")
+
+fig
+
+```
+
+```{r}
+#See correlation between each variables
+inplay_data$woba_value.j <- jitter(inplay_data$woba_value, 1)
+
+focus <- inplay_data %>%
+  select(launch_speed, launch_angle, hit_distance_sc, woba_value.j)
+
+pairs(focus)
+
+#General increase in woba as launch speed and hit distance increases. General increase in woba as launch angle increases until around 30 degrees, and woba decreases from that point on.
+```
+
+
+```{r}
+#Generalized Additive Model
+GAM2r <- gam(woba_value ~ s(launch_speed) + s(launch_angle) + s(hit_distance_sc), data = inplay_data)
+summary(GAM2r)
+
+plot(GAM2r, se = TRUE)
+```
+
+
+```{r}
+#Fit prediction to data
+inplay_data$pred <- predict(GAM2r, newdata = inplay_data)
+inplay_data <- inplay_data %>%
+  mutate(pred = ifelse(pred < 0, 0, pred),
+         pred = ifelse(pred > 2, 2, pred))
+#RMSE
+sqrt(mean((inplay_data$woba_value - inplay_data$pred)^2))
+```
+
+
+```{r}
+#Launch angle vs woba
+my_plot1 <- ggplot(inplay_data) + geom_point(aes(launch_angle, woba_value)) + geom_point(aes(launch_angle, pred), color = "blue")
+MLB_plot1 <- ggplot(inplay_data) + geom_point(aes(launch_angle, woba_value)) + geom_point(aes(launch_angle, estimated_woba_using_speedangle), color = "blue")
+
+ggarrange(my_plot1, MLB_plot1)
+```
+
+```{r}
+#Exit velocity vs woba
+my_plot2 <- ggplot(inplay_data) + geom_point(aes(launch_speed, woba_value)) + geom_point(aes(launch_speed, pred), color = "blue")
+MLB_plot2 <- ggplot(inplay_data) + geom_point(aes(launch_speed, woba_value)) + geom_point(aes(launch_speed, estimated_woba_using_speedangle), color = "blue")
+ggarrange(my_plot2, MLB_plot2)
+```
+
+
+
+```{r}
+#Fitting GAM prediction on contour plot
+
+ggplot(inplay_data) + geom_contour_fill(aes(x = launch_angle, y = launch_speed, z = pred, colour = stat(level)), binwidth = 0.1)
+
+              
+```
+```{r}
+#Apply threshold to data
+threshold <- inplay_data %>%
+  filter(round(pred, 1) == 0.7)
+
+
+ggplot(inplay_data, aes(x = launch_angle, y = launch_speed, z = pred)) + geom_contour_fill(aes(colour = stat(level)), binwidth = 0.1) +
+  geom_smooth(data = threshold, se = FALSE, line_type = "dashed", color = "red")
+
+```
+
+
+```{r}
+#Random Forest Model
+inplay_data$id = 1:nrow(fastballSwingsRight)
+trainFastballRight = fastballSwingsRight %>% dplyr::sample_frac(0.80)
+testFastballRight = dplyr::anti_join(fastballSwingsRight, trainFastballRight, by = 'id')
+trainFastballRight = trainFastballRight %>% select(-c(id, TaggedPitchType))
+testFastballRight = testFastballRight %>% select(-c(id, TaggedPitchType))
+#This is RHP model, about 83% accurate
+
+#PlateLocHeight + PlateLocSide + RelSpeed + RelHeight + RelSide + Extension + VertRelAngle + HorzRelAngle + HorzBreak + InducedVertBreak + SpinRate + SpinAxis
+
+fastball_RHP_forest = ranger(PitchCall ~ PlateLocHeight + PlateLocSide + RelSpeed + RelHeight + RelSide + Extension + VertRelAngle + HorzRelAngle + HorzBreak + InducedVertBreak + SpinRate,
+                             data = trainFastballRight,
+                           num.trees = 100,
+                           mtry = 5,
+                           min.node.size = 1,
+                           classification = TRUE,
+                           importance = "impurity")
+#table(rangerMod$predictions)
+fastball_RHP_forest$variable.importance
+fastball_RHP_forest$confusion.matrix
+fastball_RHP_pred = predict(fastball_RHP_forest, data = testFastballRight)
+fastball_RHP_confmat = confusionMatrix(data = fastball_RHP_pred$predictions, reference = testFastballRight$PitchCall)
+fastball_RHP_confmat$overall[1]
+
+
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
