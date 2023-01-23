@@ -2,9 +2,9 @@
 
 Below are the projects that I have completed or currently working on in R from 2022:
 
-**Baseball_Bat_Collision** is an ongoing project that I am working on with the help of Alan Nathan, which uses Statcast data to investigate the relationship between players’ swing and the resulting batted ball parameters, such as exit velocity and launch angle.
-
 **BaseballData** and **Baseball_Stats** references Robert Frey's lessons from his YouTube channel. This include practice codes for analyzing batter's performance in various heatmaps such as launch speed, launch angle, spray angle, expected batting average, and home run probability.
+
+**Baseball_Bat_Collision** is an ongoing project that I am working on with the help of Alan Nathan, which uses Statcast data to investigate the relationship between players’ swing and the resulting batted ball parameters, such as exit velocity and launch angle.
 
 **Capstone Project** is from Codecademy's lesson, Analyze Data with R. This explores the trends of popular anime of Japan over time and how that affects the stock prices of different companies.
 
