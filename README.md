@@ -1,8 +1,8 @@
 # R_projects2022
 
-These are the projects that I have done so far in R:
+Below are the projects that I have completed or currently working on in R from 2022:
 
-Capstone Project is from Codecademy's lesson, Analyze Data with R.
+**Capstone Project** is from Codecademy's lesson, Analyze Data with R.
 
 BaseballData references Robert Frey's lessons from his YouTube channel.
 
