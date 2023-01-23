@@ -1,0 +1,319 @@
+---
+title: "Pitcher app work"
+author: "Anand Tanna"
+date: "11/30/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Load in 2017-2021 statcast data (lab4)
+load('/Users/anandtanna/Desktop/Baseball_Analytics/fa22_stat430_anandt2/lab4/statcast2.Rdata')
+```
+
+```{r}
+statcast2
+```
+
+- Calculate 2017-2022 yearly pitcher stats, compare strikeout, ERA, walks, swing and miss %'s and see if there are patterns for good and bad pitchers.
+
+```{r}
+statcast_data = read_csv('/Users/anandtanna/Downloads/stats (2).csv')
+statcast_data
+```
+```{r}
+statcast_data$pitcher_name = paste(statcast_data$first_name, statcast_data$last_name, sep = " ")
+head(statcast_data)
+```
+
+
+```{r}
+table(statcast_data$year)
+```
+
+```{r}
+#load in pitcher WAR
+bwar_pit = read_csv("https://www.baseball-reference.com/data/war_daily_pitch.txt", na = "NULL") %>% 
+  filter(year_ID > 2017, year_ID != 2020) %>% 
+  select(name_common, year_ID, stint_ID, WAR)
+```
+
+```{r}
+head(bwar_pit)
+```
+```{r}
+#collapse WAR by stint
+library(plyr)
+collapse.stint <- function(d){
+  data.frame(WAR=sum(d$WAR))
+}
+bwar_pit.new <- ddply(bwar_pit, .(name_common, year_ID), 
+                                 collapse.stint)
+names(bwar_pit.new)[names(bwar_pit.new) == 'name_common'] <- 'pitcher_name'
+names(bwar_pit.new)[names(bwar_pit.new) == 'year_ID'] <- 'year'
+head(bwar_pit.new)
+```
+
+```{r}
+#merged WAR for all pitchers
+statcast_data2 = merge(statcast_data, bwar_pit.new, by=c("pitcher_name", "year"))
+head(statcast_data2)
+statcast_data2 = statcast_data2 %>% 
+  filter(p_formatted_ip >= 50)
+```
+
+```{r}
+# see how war is impacted by pitch velocity
+statcast_data2 %>% 
+  select(pitcher_name, year, p_formatted_ip, p_era, fastball_avg_speed, breaking_avg_speed, offspeed_avg_speed, WAR) %>% 
+  arrange(desc(WAR))
+```
+```{r}
+#arrange by fastball velocity for all pitchers
+statcast_data2 %>% 
+  select(pitcher_name, year, p_formatted_ip, p_era, fastball_avg_speed, breaking_avg_speed, offspeed_avg_speed, WAR) %>% 
+  arrange(fastball_avg_speed)
+```
+```{r}
+#arrange by fastball velocity for all innings > 100
+statcast_data2 %>% 
+  select(pitcher_name, year, p_formatted_ip, p_era, fastball_avg_speed, breaking_avg_speed, offspeed_avg_speed, WAR) %>% 
+  filter(p_formatted_ip > 150) %>% 
+  arrange(desc(fastball_avg_speed))
+```
+
+```{r}
+# see how war is impacted by pitch movement
+statcast_data2 %>% 
+  select(pitcher_name, year, p_formatted_ip, p_era, fastball_avg_spin, breaking_avg_spin, offspeed_avg_spin, WAR) %>% 
+  arrange(desc(WAR))
+```
+```{r}
+# see how bad war is impacted by pitch movement
+statcast_data2 %>% 
+  select(pitcher_name, year, p_formatted_ip, p_era, fastball_avg_break, breaking_avg_break, offspeed_avg_break, WAR) %>% 
+  arrange(desc(WAR))
+```
+```{r}
+#2022: Top 10 pitchers based off WAR
+statcast_data2 %>%
+  filter(year == 2022) %>% 
+  arrange(desc(WAR)) %>% head(10)
+```
+```{r}
+#2022: Bottom 10 pitchers based off WAR
+statcast_data2 %>%
+  select(pitcher_name, year, p_formatted_ip, fastball_avg_speed, WAR) %>% 
+  filter(year == 2022, p_formatted_ip > 150) %>% 
+  arrange(desc(WAR)) %>% tail(10)
+```
+```{r}
+# Strikeouts vs. WAR
+library(ggplot2)
+ggplot(statcast_data2, aes(WAR, p_strikeout)) +
+  geom_point() + 
+  geom_smooth()
+```
+```{r}
+# Walks vs. WAR
+library(ggplot2)
+ggplot(statcast_data2, aes(WAR, p_walk)) +
+  geom_point() + 
+  geom_smooth()
+```
+```{r}
+# Strikeout % vs. WAR
+library(ggplot2)
+ggplot(statcast_data2, aes(WAR, p_k_percent)) +
+  geom_point() + 
+  geom_smooth()
+```
+```{r}
+# Walk % vs. WAR
+library(ggplot2)
+ggplot(statcast_data2, aes(WAR, p_bb_percent)) +
+  geom_point() + 
+  geom_smooth()
+```
+```{r}
+# Edge % attribute
+statcast_data2 %>% 
+  select(pitcher_name, year, p_formatted_ip, p_era, edge_percent, WAR) %>% 
+  arrange(desc(WAR))
+```
+```{r}
+# Edge % attribute
+statcast_data2 %>% 
+  select(pitcher_name, year, p_formatted_ip, p_era, edge_percent, WAR) %>% 
+  arrange(WAR)
+```
+```{r}
+# Edge % attribute
+statcast_data2 %>% 
+  select(pitcher_name, year, p_formatted_ip, p_era, edge_percent, WAR) %>% 
+  arrange(desc(edge_percent))
+```
+
+```{r}
+# Edge % vs. WAR
+library(ggplot2)
+ggplot(statcast_data2, aes(WAR, edge_percent)) +
+  geom_point() + 
+  geom_smooth()
+```
+
+```{r}
+#model based on strikeouts and walks
+model_k_bb = lm(WAR ~ p_k_percent * p_bb_percent, data = statcast_data2)
+summary(model_k_bb)
+plot(model_k_bb)
+```
+
+```{r}
+head(statcast2)
+```
+```{r}
+statcast_2022 = read_csv('/Users/anandtanna/Downloads/2022.csv')
+tail(statcast_2022)
+```
+```{r}
+statcast_names = statcast_data2 %>% 
+  select(pitcher_name, player_id, year)
+names(statcast_2022)[names(statcast_2022) == "pitcher"] = "player_id"
+names(statcast_2022)[names(statcast_2022) == "game_year"] = "year"
+statcast_2022_full = merge(statcast_2022, statcast_names, by=c("player_id", "year"))
+```
+
+```{r}
+library(dplyr)
+Ohtani_2022 = statcast_2022_full %>% 
+  filter(pitcher_name == "Shohei Ohtani")
+
+Ohtani_2022 %>% 
+  group_by(pitch_type) %>% 
+  dplyr::summarise(N = n()) %>% 
+  mutate(pct = N / nrow(Ohtani_2022)) %>% 
+  arrange(desc(pct))
+```
+
+```{r}
+library(dplyr)
+Keller_2021 = statcast2 %>% 
+  filter(pitcher_name == "Mitch Keller")
+
+Keller_2021 %>% 
+  group_by(pitch_type) %>% 
+  dplyr::summarise(N = n()) %>% 
+  mutate(pct = N / nrow(Keller_2021)) %>% 
+  arrange(desc(pct))
+```
+
+```{r}
+quantile(statcast_data2$WAR)
+head(statcast_2022)
+```
+```{r}
+statcast_merge
+```
+```{r}
+statcast_data2 %>% 
+  filter(pitcher_name == "Shohei Ohtani", year == 2022) %>% 
+  select(pitcher_name, whiff_percent, sl_avg_speed, sl_avg_spin, sl_avg_break)
+```
+```{r}
+statcast_data2 %>% 
+  filter(pitcher_name == "Mitch Keller", year == 2021) %>% 
+  select(pitcher_name, whiff_percent, sl_avg_speed, sl_avg_spin, sl_avg_break)
+```
+
+```{r}
+library(dplyr)
+Chapman_2018 = statcast2 %>% 
+  filter(pitcher_name == "Aroldis Chapman")
+
+Chapman_2018 %>% 
+  group_by(pitch_type) %>% 
+  dplyr::summarise(N = n()) %>% 
+  mutate(pct = N / nrow(Chapman_2018)) %>% 
+  arrange(desc(pct))
+```
+```{r}
+library(dplyr)
+Rogers_2021 = statcast2 %>% 
+  filter(pitcher_name == "Tyler Rogers")
+
+Rogers_2021 %>% 
+  group_by(pitch_type) %>% 
+  dplyr::summarise(N = n()) %>% 
+  mutate(pct = N / nrow(Rogers_2021)) %>% 
+  arrange(desc(pct))
+```
+
+```{r}
+statcast_data2 %>% 
+  filter(pitcher_name == "Aroldis Chapman", year == 2019) %>% 
+  select(pitcher_name, fastball_avg_speed, sl_avg_speed, sl_avg_break, whiff_percent,p_walk, groundballs_percent, WAR)
+```
+
+```{r}
+statcast_data2 %>% 
+  filter(pitcher_name == "Tyler Rogers", year == 2021) %>% 
+  select(pitcher_name, fastball_avg_speed, sl_avg_speed, sl_avg_break, whiff_percent,p_walk, groundballs_percent, WAR)
+```
+
+```{r}
+#Split
+p_data3 <- statcast_data2 %>%
+  filter(!is.na(fastball_avg_speed),
+         !is.na(offspeed_avg_speed), 
+         !is.na(offspeed_avg_break), 
+         !is.na(in_zone_percent), 
+         !is.na(edge_percent),
+         !is.na(in_zone_swing_miss),
+         !is.na(oz_swing_miss_percent),
+         !is.na(meatball_percent),
+         !is.na(groundballs_percent),
+         !is.na(out_zone_percent),
+         !is.na(z_swing_miss_percent),
+         !is.na(swing_percent),
+         !is.na(flyballs_percent),
+         !is.na(whiff_percent),
+         !is.na(fastball_avg_break),
+         !is.na(p_k_percent),
+         !is.na(p_bb_percent))
+
+set.seed(13)
+ind <- sample(1:nrow(statcast_data2), size = 150, replace = FALSE)
+train <- p_data3[ind, ]
+test <- p_data3[-ind, ]
+
+m_small <- lm(WAR ~ p_k_percent + p_bb_percent, data = train)
+test1 <- test
+test1$Prediction <- predict(m_small, test1)
+sqrt(mean((test1$WAR - test1$Prediction)^2))
+
+
+m_big <- lm(WAR ~ p_k_percent + p_bb_percent + in_zone_percent + whiff_percent + f_strike_percent + fastball_avg_break + fastball_avg_speed + offspeed_avg_speed + offspeed_avg_break +  meatball_percent + groundballs_percent + flyballs_percent + edge_percent, data = train)
+test2 <- test
+test2$Prediction <- predict(m_big, test2)
+sqrt(mean((test2$WAR - test2$Prediction)^2))
+
+m_best <- lm(WAR ~ p_k_percent + p_bb_percent + whiff_percent + meatball_percent + groundballs_percent + fastball_avg_spin , data = train)
+test3 <- test
+test3$Prediction <- predict(m_best, test3)
+sqrt(mean((test3$WAR - test3$Prediction)^2))
+summary(m_best)
+#Other variables that we considered: offspeed_avg_speed, offspeed_avg_break, f_strike_percent, fastball_avg_break
+```
+
+```{r}
+names(statcast_data2)
+```
+
+```{r}
+sapply(statcast_data2, function(x)all(is.na(x)))
+```
+

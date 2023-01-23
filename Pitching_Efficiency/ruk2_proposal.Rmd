@@ -1,0 +1,94 @@
+---
+title: "Final Project Proposal"
+author: "Riku Komatani"
+date: "Due on 11/18/2022 at 11:59 pm"
+output:
+  html_document:
+    df_print: paged
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Your final project proposal is meant to ensure that you and your final project group choose a project that is rigorous, interesting, and can be completed in time. Final projects are due on 12/18 at 11:59 pm, and you are allowed and encouraged to work in groups of 2-3. Completion of this project proposal is worth 50 points. 
+
+Recall that there are 370 points allocated towards your final project. As just mentioned, this proposal is worth 50 points. There are 70 points allocated for your presentation. This presentation will be in the form of a 5-10 minute recorded presentation. The remaining 250 points is allocated to project materials and deliverables. Your presentation and your project materials are all due on or before 12/18 at 11:59 pm.
+
+
+
+**Instructions.** Fill out this form.
+
+
+**Group members**: 
+Riku Komatani, Anand Chetan
+
+
+**Project description.** Provide at least one paragraph describing what your project is about: 
+
+Every pitchers in MLB are different in many ways. Some can throw a fastball at very high velocity, while others can command their pitch well. In this project, we will determine what makes a great pitcher in the MLB. Since there are many factors that can be considered for this topic, we will focus on two parts. The first part is the quality of each pitch types such as velocity and movements, and where they tend to throw it. In this part, we will also explore on how each pitchers uses different pitch types to determine what combinations of pitches make a pitcher more effective. The second part is the frequency of events such as walks and strikeouts for each pitcher. In order to differentiate between an effective pitcher and non effective pitcher, we will select several pitchers that performed well and several pitchers who performed poorly based on factors like WAR. Then we will compare the difference between them in terms of two parts that we explained earlier, to determine the traits of a good pitcher.  
+
+
+**Project deliverables.** Provide at least one paragraph describing what you plan to produce: 
+
+The main product we plan to deliver is a RShiny app where the user can see how effective each pitch type is and what locations are the best for each pitch type. The user will be able to select team, year, and pitcher to see that pitcher's heat map of where in the strikezone they get hit the most. Through this, the user will see what locations make an effective pitcher. Also, we will have a heat map regarding pitch types, were the user will see where each pitch is thrown to be the most effective. In addition to this app, we plan on creating slides similar to the lectures to compare effective and non-effective pitchers. We will explore different variables such as pitch movement, location, type, number of walks, and number of strikeouts to develop our conclusions. In these slides, we will include exploratory data analysis of pitching stats and include any plots that support our claims.  
+
+
+
+
+**Project submission.** Provide at least one paragraph describing how you plan to submit your final project materials: 
+
+
+Our project materials will contain slides similar to the lectures that includes introduction to the topic, our approaches that we went through, results, and conclusion. Each slide will contain words as well as some coding and plots to describe our process. We will also attach our RShiny app regarding effectiveness of different pitch types and locations for each pitcher as well. Our presentation will consist of a 5-10 min recording of us walking through the slides as well as our RShiny app. We plan to submit our recording, slides, RShiny app, and Rmd file of our codes. 
+
+
+
+
+**R shiny layout.** Provide a sketch of the proposed layout of your Shiny app, ignore this if you are not creating a Shiny app:
+
+
+![Pitch Effectivness](C:/Users/12244/STAT430/fa22_stat430_ruk2/final/Pitcher_Eff.jpeg)
+
+
+
+
+<!-- **Instructions:** For this lab assignment you will create a R Shiny app. You are allowed to work on this lab assignment in groups of 2-3. You still need to submit an individual lab report if you do work in a group, and you need to list your collaborators. Specific details and a basic grading rubric follow.  -->
+
+<!-- The app that you are going to create is largely up to you, but it should be closely related to materials that we covered in class. Some interesting ideas are:  -->
+
+<!--  - You can create a Shiny app that displays seasonal stats for each player (or full time players) on a user-selected team and year. This app can also display basic team information such as aggregated seasonal scaled variables: \texttt{OPSscale = OPS/avgOPS}, \texttt{WHIPscale = avgWHIP/WHIP}, and \texttt{FPscale = avgFP/FP}. -->
+
+<!--  - You can create a Shiny app that displays career trajectories for user-selected hitters and pitchers. You can add a widget that allows users to change which stats are displayed. This app can also display career values for the statistic that user selects. -->
+
+<!--  - You can create a Shiny app that fits the Pythagorean formula model (after finding the optimal exponent) to the run-differential and win-loss data for a user-selected time period. The app can then display a top 10 list of managers who most overperformed their Pythagorean winning percentage and a top 10 list of managers who most underperformed their Pythagorean winning percentage over the user-selected time period. -->
+
+<!--  - You can create a Shiny app that uses the \texttt{simulate\_half\_inning} function from the course notes to estimate a 2016 or 1968 team-specific RE24 matrix using Markov Chain simulation. -->
+
+<!--  - You can create a Shiny app that displays annual averages of \texttt{release\_spin\_rate},  -->
+<!-- \texttt{effective\_speed},  -->
+<!-- \texttt{plate\_x},  -->
+<!-- \texttt{plate\_z},  -->
+<!-- \texttt{pfx\_x},  -->
+<!-- \texttt{pfx\_z},  -->
+<!-- \texttt{release\_x},  -->
+<!-- and \texttt{release\_z}, and computes the annual pitch type percentages for a user-selected pitcher. The graphic should allow one to clearly see how these annual averages change over time. It is best to display all nine plots in a single grid of plots rather than printing off nine separate plots. This can be achieved using the \texttt{grid.arrange} function in the \texttt{gridExtra} package.  -->
+
+<!--  - Something else that was covered in class. -->
+
+
+<!-- Basic rubric details:  -->
+
+<!--  - 10 points for all files submitted in the correct directory with the correct naming convention. -->
+
+<!--  - 50 points for an app that successfully compiles from the materials in your directory. -->
+
+<!--  - 10 points will be given for doing something interesting. Yes, this is subjective, but you can ask your instructor if what you are doing is interesting well before you submit your app. Any of the ideas mentioned above are interesting enough to earn these points. -->
+
+<!--  - 15 points will be devoted to bugs. Your app should not break, time out, or display generic warnings/messages. Your app should not take too long to run. How long is too long is a bit subjective and project-specific. You can alleviate time concerns by displaying time warnings. -->
+
+<!--  - 15 points will be devoted to presentation. Plots and inputs should have clear labels. If anything is not clear from these labels, then you need to provide additional clarifying text. -->
+
+
+<!-- Correct submission of a Shiny app that successfully compiles and displays something interesting at your defaults is automatically worth 70 points. Submission of a Shiny app that is not based on course material or closely related to course material will be deducted 50 points automatically. For example, a correct submission of the Old Faithful Shiny app would be worth 45 points (50 point deduction for submitting a Shiny app not related to course material, and 5 points deducted for not labeling the x-axis and providing a plot title).  -->

@@ -1,0 +1,405 @@
+---
+title: "What Makes an Effective Pitcher?"
+author: "Anand Tanna & Riku Komatani"
+date: ""
+output: beamer_presentation
+urlcolor: blue
+header-includes: 
+ - \usepackage{amsthm}
+ - \usepackage{amsmath}
+ - \usepackage{amsfonts}
+ - \usepackage{amscd}
+ - \usepackage{amssymb}
+ - \usepackage[sectionbib]{natbib}
+ - \usepackage{url}
+ - \usepackage{graphicx,times}
+ - \usepackage{array,fancyhdr,rotating}
+---
+
+```{r, setup, include=FALSE}
+require(mosaic)   # Load additional packages here 
+knitr::opts_chunk$set(
+  tidy=FALSE,     # display code as typed
+  size="small")   # slightly smaller font for code
+```
+
+```{r, include=FALSE}
+#Load in 2017-2021 statcast data (lab4)
+load('/Users/anandtanna/Desktop/Baseball_Analytics/fa22_stat430_anandt2/lab4/statcast2.Rdata')
+```
+
+```{r, include=FALSE}
+library(tidyverse)
+statcast_data = read_csv('/Users/anandtanna/Downloads/stats (2).csv')
+statcast_data$pitcher_name = paste(statcast_data$first_name, statcast_data$last_name, sep = " ")
+```
+
+```{r, include=FALSE}
+#load in pitcher WAR
+bwar_pit = read_csv("https://www.baseball-reference.com/data/war_daily_pitch.txt", na = "NULL") %>% 
+  filter(year_ID > 2017, year_ID != 2020) %>% 
+  select(name_common, year_ID, stint_ID, WAR)
+```
+
+```{r, include=FALSE}
+#collapse WAR by stint
+library(plyr)
+collapse.stint <- function(d){
+  data.frame(WAR=sum(d$WAR))
+}
+bwar_pit.new <- ddply(bwar_pit, .(name_common, year_ID), 
+                                 collapse.stint)
+names(bwar_pit.new)[names(bwar_pit.new) == 'name_common'] <- 'pitcher_name'
+names(bwar_pit.new)[names(bwar_pit.new) == 'year_ID'] <- 'year'
+```
+
+```{r, include=FALSE}
+#merged WAR for all pitchers
+statcast_data2 = merge(statcast_data, bwar_pit.new, by=c("pitcher_name", "year"))
+head(statcast_data2)
+statcast_data2 = statcast_data2 %>% 
+  filter(p_formatted_ip >= 50)
+```
+
+```{r, include=FALSE}
+statcast_2022 = read_csv('/Users/anandtanna/Downloads/2022.csv')
+statcast_names = statcast_data2 %>% 
+  select(pitcher_name, player_id, year)
+names(statcast_2022)[names(statcast_2022) == "pitcher"] = "player_id"
+names(statcast_2022)[names(statcast_2022) == "game_year"] = "year"
+statcast_2022_full = merge(statcast_2022, statcast_names, by=c("player_id", "year"))
+```
+
+## Introduction
+
+There are many factors that define an effective pitcher in the MLB. Our mission is to explore these factors in order to determine what differentiates a good pitcher from a bad pitcher. 
+
+We will look at:
+
+  - Pitch zone location
+  - Pitch velocity + movement
+  - Pitch types + pitch combinations
+  - Important pitching statistics: SO, BB, WAR, etc.
+  
+## Data
+
+We will be using Statcast data from 2018-2022 (excluding 2020). Our data is scraped from Baseball Savant, Baseball Reference, and the pitch-by-pitch statcast data from Lab 4. 
+  
+  - Only included pitchers who pitched 50 innings or more in a single season
+  
+## Most and Least Valuable Pitchers based off WAR
+
+\tiny
+```{r}
+statcast_data2 %>%
+  select(pitcher_name, year, player_age, p_formatted_ip, p_era, WAR) %>% 
+  arrange(desc(WAR)) %>% head(10)
+statcast_data2 %>%
+  select(pitcher_name, year, player_age, p_formatted_ip, p_era, WAR) %>%
+  arrange(desc(WAR)) %>% tail(10)
+```
+
+## Strikeout % vs. WAR
+
+\tiny
+```{r, echo=FALSE, message=FALSE}
+# Strikeout % vs. WAR
+library(ggplot2)
+ggplot(statcast_data2, aes(WAR, p_k_percent)) +
+  geom_point() + 
+  geom_smooth()
+```
+
+
+## Walk % vs. WAR
+
+\tiny
+```{r, echo=FALSE, message=FALSE}
+# Walk % vs. WAR
+library(ggplot2)
+ggplot(statcast_data2, aes(WAR, p_bb_percent)) +
+  geom_point() + 
+  geom_smooth()
+```
+
+
+## Edge % vs. WAR
+
+\tiny
+```{r, echo=FALSE, message=FALSE}
+# Edge % vs. WAR
+library(ggplot2)
+ggplot(statcast_data2, aes(WAR, edge_percent)) +
+  geom_point() + 
+  geom_smooth()
+```
+
+## Ohtani (2022) vs. Keller (2021)
+
+Both of these pitchers throw at a high velocity, however Ohtani threw much more effectively. Here we look at their pitch types.
+
+Ohtani:
+
+\tiny
+```{r, echo=FALSE}
+library(dplyr)
+Ohtani_2022 = statcast_2022_full %>% 
+  filter(pitcher_name == "Shohei Ohtani")
+
+Ohtani_2022 %>% 
+  group_by(pitch_type) %>% 
+  dplyr::summarise(N = n()) %>% 
+  mutate(pct = N / nrow(Ohtani_2022)) %>% 
+  arrange(desc(pct))
+```
+
+\normalsize
+Keller:
+
+\tiny
+```{r, echo=FALSE}
+Keller_2021 = statcast2 %>% 
+  filter(pitcher_name == "Mitch Keller")
+
+Keller_2021 %>% 
+  group_by(pitch_type) %>% 
+  dplyr::summarise(N = n()) %>% 
+  mutate(pct = N / nrow(Keller_2021)) %>% 
+  arrange(desc(pct))
+```
+
+## Ohtani vs. Keller
+
+Here are stats that stand out the most, Ohtani makes batters whiff more and his slider has much more movement.
+
+\tiny
+```{r, echo=FALSE}
+statcast_data2 %>% 
+  filter(pitcher_name == "Shohei Ohtani", year == 2022) %>% 
+  select(pitcher_name, whiff_percent, fastball_avg_speed, sl_avg_speed, sl_avg_spin, sl_avg_break, edge_percent, p_bb_percent)
+```
+
+
+\tiny
+```{r, echo=FALSE}
+statcast_data2 %>% 
+  filter(pitcher_name == "Mitch Keller", year == 2021) %>% 
+  select(pitcher_name, whiff_percent, fastball_avg_speed, sl_avg_speed, sl_avg_spin, sl_avg_break, edge_percent, p_bb_percent)
+```
+
+## Ohtani Slider Pitch Location Chart
+
+
+ - Ohtani tends to throw his slider in various locations within the strike zone. He might choose to throw sliders in any location within the strike zone because it breaks a lot.
+  
+![Shohei Ohtani]("/Users/anandtanna/Downloads/Plots/Ohtani_SL.JPG")
+
+
+## Keller Slider Pitch Location Chart
+
+ - Keller tends to throw sliders on outside corner (for righties). He has to throw his slider on the outside corner (for righties) due to its lack of movements.
+
+![Mitch Keller]("/Users/anandtanna/Downloads/Plots/Keller_SL.JPG")
+
+## Chapman vs. Rogers
+
+Here we have 2 bullpen pitchers. They are both effective, yet their pitching styles are very different. Here we look at their pitch types.
+
+Chapman:
+
+\tiny
+```{r, echo=FALSE}
+library(dplyr)
+Chapman_2018 = statcast2 %>% 
+  filter(pitcher_name == "Aroldis Chapman")
+
+Chapman_2018 %>% 
+  group_by(pitch_type) %>% 
+  dplyr::summarise(N = n()) %>% 
+  mutate(pct = N / nrow(Chapman_2018)) %>% 
+  arrange(desc(pct))
+```
+
+\normalsize
+Rogers:
+
+\tiny
+```{r, echo=FALSE}
+library(dplyr)
+Rogers_2021 = statcast2 %>% 
+  filter(pitcher_name == "Tyler Rogers")
+
+Rogers_2021 %>% 
+  group_by(pitch_type) %>% 
+  dplyr::summarise(N = n()) %>% 
+  mutate(pct = N / nrow(Rogers_2021)) %>% 
+  arrange(desc(pct))
+```
+
+## Chapman vs. Rogers
+
+
+Here are the stats that stand out the most. Chapman relies on high velocity, while Rogers throws relatively slow but still has a higher WAR than Chapman. He relies on groundball outs while Chapman relies on the batter whiffing. Rogers also has more break on his offspeed pitches. Rogers also has better command as he threw less walks in more innings pitched.
+
+\tiny
+```{r, echo=FALSE}
+statcast_data2 %>% 
+  filter(pitcher_name == "Aroldis Chapman", year == 2019) %>% 
+  select(pitcher_name, fastball_avg_speed, fastball_avg_spin, sl_avg_speed, sl_avg_break, whiff_percent,p_walk, groundballs_percent, WAR)
+```
+
+\tiny
+```{r}
+statcast_data2 %>% 
+  filter(pitcher_name == "Tyler Rogers", year == 2021) %>% 
+  select(pitcher_name, fastball_avg_speed, fastball_avg_spin, sl_avg_speed, sl_avg_break, whiff_percent,p_walk, groundballs_percent, WAR)
+```
+
+## Chapman Fastball Pitch Location Chart
+
+- Chapman throws his fastball from top to bottom of the strike zone because his high velocity makes it hard to hit in any location. Chapman's hit percentage is low in the higher part of the strike zone.
+
+![Aroldis Chapman]("/Users/anandtanna/Downloads/Plots/Chapman_FF.JPG")
+
+## Rogers Fastball Pitch Location Chart
+
+- Rogers tends to throw fastball in low strike zones to stay safe since he throws a slow fastball. Rogers hit percentage is around 0.3 - 0.5 for locations that he throws often, which is higher than expected.
+
+![Tyler Rogers]("/Users/anandtanna/Downloads/Plots/Rogers_FF.JPG")
+
+## Chapman Slider Pitch Location Chart
+
+- Chapman tends to throw sliders on low inside corner (for righties) into the ball zone which tends to be most effective place to throw for lefty pitchers.
+
+![Aroldis Chapman]("/Users/anandtanna/Downloads/Plots/Chapman_SL.JPG")
+
+## Rogers Slider Pitch Location Chart
+
+- Rogers tends to throw sliders a little more often on high outside corner (for righties) which is reasonable since he is a right side-arm pitcher and his slider will tail away from righty batters in that location, making it hard to hit.
+
+![Tyler Rogers]("/Users/anandtanna/Downloads/Plots/Rogers_SL.JPG")
+
+## Best model for predicting WAR of pitchers
+
+```{r, include=FALSE}
+#Split
+p_data3 <- statcast_data2 %>%
+  filter(!is.na(fastball_avg_speed),
+         !is.na(offspeed_avg_speed), 
+         !is.na(offspeed_avg_break), 
+         !is.na(in_zone_percent), 
+         !is.na(edge_percent),
+         !is.na(in_zone_swing_miss),
+         !is.na(oz_swing_miss_percent),
+         !is.na(meatball_percent),
+         !is.na(groundballs_percent),
+         !is.na(out_zone_percent),
+         !is.na(z_swing_miss_percent),
+         !is.na(swing_percent),
+         !is.na(flyballs_percent),
+         !is.na(whiff_percent),
+         !is.na(fastball_avg_break),
+         !is.na(p_k_percent),
+         !is.na(p_bb_percent))
+```
+
+\tiny
+```{r}
+set.seed(13)
+ind <- sample(1:nrow(statcast_data2), size = 150, replace = FALSE)
+train <- p_data3[ind, ]
+test <- p_data3[-ind, ]
+
+m_small <- lm(WAR ~ p_k_percent + p_bb_percent, data = train)
+test1 <- test
+test1$Prediction <- predict(m_small, test1)
+sqrt(mean((test1$WAR - test1$Prediction)^2))
+
+
+m_big <- lm(WAR ~ p_k_percent + p_bb_percent + in_zone_percent + whiff_percent + 
+f_strike_percent + fastball_avg_break + fastball_avg_speed + offspeed_avg_speed 
++ offspeed_avg_break +  meatball_percent + groundballs_percent + 
+flyballs_percent + edge_percent, data = train)
+test2 <- test
+test2$Prediction <- predict(m_big, test2)
+sqrt(mean((test2$WAR - test2$Prediction)^2))
+
+m_best <- lm(WAR ~ p_k_percent + p_bb_percent + whiff_percent + 
+meatball_percent + groundballs_percent + fastball_avg_spin , data = train)
+test3 <- test
+test3$Prediction <- predict(m_best, test3)
+sqrt(mean((test3$WAR - test3$Prediction)^2))
+```
+
+## Best model for predicting WAR of pitchers
+
+\tiny
+```{r}
+summary(m_best)
+```
+
+## Conclusions
+
+- Our model found that strikeout %, walk %, whiff %, meatball %, groundball %, and fastball spin were the best predicting variables for calculating the value of a pitcher.
+
+- There is no set way for a pitcher to be effective. Through our comparisons, we saw it takes a combination of many factors such as pitch locations and command, pitch type usage, velocity, throwing mechanics, and pitch movement to be an effective MLB pitcher.
+
+- It is important to look at factors together and not individually. For example, edge % is better to look at with pitch movement rather than by it self.
+
+## Code for Hit Percentage Heat Plot
+
+\tiny
+```{r, eval=FALSE}
+#Function for hit percentage heat plot
+hit_likely <- function(data) {
+  data <- data %>%
+    mutate(Hit = ifelse(events %in% c("single", "double", "triple", "home_run"), 1, 0))
+  # implement the GAM fit binary model (logistic link)
+  fit <- gam(Hit ~ s(plate_x, plate_z), family = binomial, data = data)
+  # find predicted probabilities over a 50 x 50 grid
+  x <- seq(-1.5, 1.5, length.out=50)
+  y <- seq(0.5, 5, length.out=50)
+  data.predict <- data.frame(plate_x = c(outer(x, y * 0 + 1)),
+                             plate_z = c(outer(x * 0 + 1, y)))
+  predicted_data <- fit %>%
+    augment(type.predict = "response", newdata = data.predict)
+  colnames(predicted_data)[colnames(predicted_data) == ".fitted"] <- "hit_percentage"
+  # construct heat percentage tile plot with strike zone boundary line
+  ggplot(predicted_data, aes(plate_x, plate_z)) +
+    geom_tile(aes(fill = hit_percentage)) +
+    scale_fill_distiller(palette = "Spectral") +
+    geom_path(data = strike_zone, aes(x, y)) +
+    coord_fixed() + xlab("plate_x (ft)") + ylab("plate_z (ft)")
+}
+```
+
+## Code for Pitch Location Frequency Heat Plot
+
+\tiny
+```{r}
+#Function for pitch location frequency
+pitch_freq <- function(data) {
+  #Divide zone into box of 0.15 (ft^2)
+  data <- data %>%
+    mutate(plate_x_fifteenth = 0.15 * round(plate_x / 0.15, 0),
+           plate_z_fifteenth = 0.15 * round(plate_z / 0.15, 0))
+  #Count the frequency of pitch in each box
+  pitch_grouped <- data %>%
+    dplyr::group_by(plate_x_fifteenth, plate_z_fifteenth) %>%
+    dplyr::summarize(frequency = n())
+  #Plot pitch location frequency with strike zone boundary line
+  ggplot(pitch_grouped, aes(plate_x_fifteenth, plate_z_fifteenth)) +
+    geom_tile(aes(fill = frequency)) +
+    geom_path(data = strike_zone, aes(x, y)) +
+    scale_fill_viridis_c(option = "B", direction = -1) +
+    coord_fixed() +
+    xlim(c(-1.5, 1.5)) +
+    ylim(c(0.5, 5)) + xlab("plate_x (ft)") + ylab("plate_z (ft)")
+}
+```
+
+## Shiny App
+
+- Now it is time to demo our Shiny App where you will be able to see hit percentage and pitch location frequency of pitchers!
+
+- This app allows you to select the pitcher, year, and pitch type.

@@ -1,0 +1,106 @@
+---
+title: "STAT430_Final_Pitcher_Comparison_Plots"
+author: "Riku Komatani"
+date: "2022-12-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Data is taken directly from pitcher_shiny.R
+
+## Comparing Plots
+```{r}
+#Obtain data for players we are comparing: Use every data in 2018 ~ 2022 to obtain meaningful hit percentage heat plot
+#Shohei Ohtani: 2018, 2021, 2022
+Ohtani_data <- sc4 %>% filter(Name == "Shohei Ohtani",
+                              pitch_type == "SL")
+
+Ohtani_data2 <- sc5 %>% filter(Name == "Shohei Ohtani",
+                               game_year == 2022,
+                              pitch_type == "SL")
+
+#Mitch Keller: 2021, 2022
+Keller_data <- sc4 %>% filter(Name == "Mitch Keller",
+                              pitch_type == "SL")
+
+Keller_data2 <- sc5 %>% filter(Name == "Mitch Keller",
+                              pitch_type == "SL")
+
+#Aroldis Chapman: 2018, 2019, 2021
+Chapman_data <- sc4 %>% filter(Name == "Aroldis Chapman",
+                             pitch_type == "FF")
+
+Chapman_data2 <- sc5 %>% filter(Name == "Aroldis Chapman",
+                             pitch_type == "FF")
+
+Chapman_data3 <- sc4 %>% filter(Name == "Aroldis Chapman",
+                             pitch_type == "SL")
+
+Chapman_data4 <- sc5 %>% filter(Name == "Aroldis Chapman",
+                             pitch_type == "SL")
+
+#Tyler Rogers: 2021, 2022
+Rogers_data <- sc4 %>% filter(Name == "Tyler Rogers",
+                             pitch_type == "FF")
+
+Rogers_data2 <- sc5 %>% filter(Name == "Tyler Rogers",
+                             pitch_type == "FF")
+
+Rogers_data3 <- sc4 %>% filter(Name == "Tyler Rogers",
+                             pitch_type == "SL")
+
+Rogers_data4 <- sc5 %>% filter(Name == "Tyler Rogers",
+                             pitch_type == "SL")
+
+```
+
+
+```{r}
+library(ggpubr)
+#Ohtani vs Keller: SL
+Ohtani_1 <- hit_likely(Ohtani_data) + labs(title = "Shohei Ohtani SL Hit Percentage")
+Ohtani_2 <- pitch_freq(Ohtani_data2) + labs(title = "Shohei Ohtani SL Pitch Frequency")
+Keller_1 <- hit_likely(Keller_data) + labs(title = "Mitch Keller SL Hit Percentage")
+Keller_2 <- pitch_freq(Keller_data2) + labs(title = "Mitch Keller SL Pitch Frequency")
+ggarrange(Ohtani_1, Ohtani_2, Keller_1, Keller_2, ncol = 2)
+
+```
+Comments:
+- Keller tends to throw sliders on outside corner (for righties) into the ball zone while Ohtani throws it in various locations within the strike zone.
+- Considering only strikes, Ohtani's slider has overall lower hit percentage than Keller's slider.
+- Ohtani might choose to throw sliders in any location within the strike zone because it breaks a lot, while Keller has to throw it in outside corner (for righties) due to its lack of movements.
+
+
+```{r}
+#Chapman (lefty) vs Rogers (side-arm): FF
+Chapman_1 <- hit_likely(Chapman_data) + labs(title = "Aroldis Chapman FF Hit Percentage")
+Chapman_2 <- pitch_freq(Chapman_data2) + labs(title = "Aroldis Chapman FF Pitch Frequency")
+Rogers_1 <- hit_likely(Rogers_data) + labs(title = "Tyler Rogers FF Hit Percentage")
+Rogers_2 <- pitch_freq(Rogers_data2) + labs(title = "Tyler Rogers FF Pitch Frequency")
+ggarrange(Chapman_1, Chapman_2, Rogers_1, Rogers_2, ncol = 2)
+```
+Comments:
+- Rogers tends to throw fastball in low strike zones to stay safe since he throws a slow fastball, while Chapman throws it from top to bottom of the strike zone because his high velocity makes it hard to hit in any location.
+- Chapman's hit percentage is low in the higher part of the strike zone, which signifies that fastball with high velocity is harder to hit in higher locations.
+- Rogers hit percentage is around 0.3 ~ 0.5 for locations that he throws often, which is higher than expected.
+
+
+```{r}
+#Chapman (lefty) vs Rogers (side-arm): SL
+Chapman_3 <- hit_likely(Chapman_data3) + labs(title = "Aroldis Chapman SL Hit Percentage")
+Chapman_4 <- pitch_freq(Chapman_data4) + labs(title = "Aroldis Chapman SL Pitch Frequency")
+Rogers_3 <- hit_likely(Rogers_data3) + labs(title = "Tyler Rogers SL Hit Percentage")
+Rogers_4 <- pitch_freq(Rogers_data4) + labs(title = "Tyler Rogers SL Pitch Frequency")
+ggarrange(Chapman_3, Chapman_4, Rogers_3, Rogers_4, ncol = 2)
+```
+Comments: 
+- Rogers overall hit percentage for sliders across the strike zone is very low
+- Chapman tends to throw sliders on low inside corner (for righties) into the ball zone which tends to be most effective place to throw for lefty pitchers.
+- Rogers tends to throw sliders slightly more on high outside corner (for righties) which is reasonable since he is a right side-arm pitcher and his slider will tail away from righty batters in that location, making it hard to hit.
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
