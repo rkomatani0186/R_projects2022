@@ -242,16 +242,8 @@ ggplot(data_AA_CA, aes(CA, AA, z = exit_speed)) + geom_contour(binwidth = 1) +
   xlab("Centerline Angle (deg)") + ylab("Attack Angle (deg)")
 
 ```
-```{r}
 
 
-  
-data_AA_CA[which.min(abs(as.numeric(la_for_peak_ev("Ohtani, Shohei")[1])-data_AA_CA$launch_angle)),]$launch_angle
-
-
-
-
-```
 ```{r}
 plot1 <- ggplot(data_AA_CA, aes(CA, AA, z = scaled_ev)) + geom_contour(binwidth = 0.01) +
   geom_text_contour(aes(label = round(..level.., 2))) +
@@ -374,6 +366,7 @@ plot1 + geom_point(data = get_approx_data("Ohtani, Shohei"), aes(CA, AA))
 plot1 + geom_point(data = get_approx_data("Altuve, Jose"), aes(CA, AA))
 
 ```
+
 ```{r}
 AA_LA <- data_AA_CA %>%
   filter(AA == CA) %>%
