@@ -210,11 +210,6 @@ triple_data <- function(name, data) {
 
 ```
 
-```{r}
-unique(data$description)
-
-
-```
 
 
 ```{r}
@@ -455,8 +450,6 @@ ev_data <- h_data %>%
   select(player_name, max_ev)
 
 
-#Should I consider fouls when computing ev??????????????????????????????????????????
-
 new_data <- inner_join(data, ev_data, by = c("player_name"))
 new_data2 <- new_data %>%
   select(player_name, max_ev, launch_angle, launch_speed, description, events) %>%
@@ -473,7 +466,6 @@ ggplot(Ohtani_data, aes(launch_angle, scaled_ev)) + geom_point()
 ```{r}
 #Function for plotting Exit Velocity vs Launch Angle for a batter
 plot_scaled_ev_vs_la <- function(batter) {
-#Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value??????????????????????????????
   data_batter <- new_data2 %>%
   #Label data with launch angle for every bins of width 5 degrees
     filter(player_name == batter) %>%
@@ -538,7 +530,6 @@ plot_scaled_ev_vs_la("Ohtani, Shohei")
 ```{r}
 plot_scaled_ev_vs_la("Ohtani, Shohei")
 
-#Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value??????????????????????????????
   data_batter <- new_data2 %>%
   #Label data with launch angle for every bins of width 5 degrees
     filter(player_name == "Ohtani, Shohei") %>%

@@ -1,9 +1,5 @@
 library(RSQLite)
 library(DBI)
-db = dbConnect(SQLite(), dbname = "statcast_db.sqlite")
-dbListTables(db)
-HData <- dbGetQuery(conn = db, "select * from statcast_data")
-
 library(mgcv)
 library(tidyverse)
 library(baseballr)
@@ -12,6 +8,11 @@ library(shiny)
 library(CalledStrike)
 library(broom)
 library(dplyr)
+
+db = dbConnect(SQLite(), dbname = "statcast_db.sqlite")
+dbListTables(db)
+HData <- dbGetQuery(conn = db, "select * from statcast_data")
+
 
 f <- HData %>% filter(stand == "L")
 CalledStrike::sa_plot(f)
