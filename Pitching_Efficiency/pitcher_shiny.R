@@ -17,15 +17,15 @@ library(plyr)
 
 
 #Import Pitch by Pitch Data from Statcast:
-#Since the data was too big to push into Github, please use the data directly from lab 4 for seasons: 2018, 2019, 2021, and 2022.
-#statcast pitch by pitch data from lab 4 for 2018 season:
-data_2018 <- read.csv("C:/Users/12244/STAT430/statcast/2018.csv") 
-#statcast pitch by pitch data from lab 4 for 2019 season:
-data_2019 <- read.csv("C:/Users/12244/STAT430/statcast/2019.csv")
-#statcast pitch by pitch data from lab 4 for 2021 season:
-data_2021 <- read.csv("C:/Users/12244/STAT430/statcast/2021.csv")
-#statcast pitch by pitch data from lab 4 for 2022 season:
-data_2022 <- read.csv("C:/Users/12244/STAT430/statcast/2022.csv") 
+#Since the data was too big to push into Github, please use the statcast_scraper.R file to scrape data for seasons: 2018, 2019, 2021, and 2022.
+#statcast pitch by pitch data for 2018 season:
+# data_2018 <- read.csv("C:/Users/12244/STAT430/statcast/2018.csv") 
+# #statcast pitch by pitch data for 2019 season:
+# data_2019 <- read.csv("C:/Users/12244/STAT430/statcast/2019.csv")
+# #statcast pitch by pitch data for 2021 season:
+# data_2021 <- read.csv("C:/Users/12244/STAT430/statcast/2021.csv")
+# #statcast pitch by pitch data for 2022 season:
+# data_2022 <- read.csv("C:/Users/12244/STAT430/statcast/2022.csv") 
 
 #Import Pitcher's general data from baseball savant: 
 #These data are included in the statcast_data folder in the working directory

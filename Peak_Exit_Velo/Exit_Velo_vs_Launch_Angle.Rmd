@@ -33,8 +33,8 @@ library(ggrepel)
 # sc <- dbGetQuery(db, "select * from statcast_data")
 # dbDisconnect(db)
 
-#Obtain data for MLB season 2021
-data <- read.csv("C:/Users/12244/CSV_2021/sc.csv")
+#Obtain data for MLB season 2021 using function in statcast_scraper.R
+# data <- read.csv("C:/Users/12244/CSV_2021/sc.csv")
 
 ```
 
