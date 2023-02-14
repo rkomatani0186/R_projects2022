@@ -1,0 +1,41 @@
+---
+title: "Ball Bat Collision 2"
+author: "Riku Komatani"
+date: "2023-02-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# How does batter adjust to hit homeruns with his peak launch angle?
+```{r}
+inplay_data <- data %>%
+  filter(type == "X",
+         events %in% c("single", "double", "triple", "home_run", "sac_fly", "force_out", "field_out")) %>%
+  mutate(weight = case_when(events == "single" ~ 1,
+                            events == "double" ~ 2,
+                            events == "triple" ~ 3,
+                            events == "home_run" ~ 4,
+                            TRUE ~ 0))
+
+ggplot(inplay_data) + geom_jitter(aes(launch_angle, weight))
+```
+```{r}
+Ohtani_data <- inplay_data %>%
+  filter(player_name == "Ohtani, Shohei")
+
+ggplot(Ohtani_data) + geom_jitter(aes(launch_angle, weight)) + geom_vline(aes(xintercept = as.numeric(la_for_peak_ev("Ohtani, Shohei")[1])), linetype = "dashed", color = "red")
+
+```
+
+```{r}
+Altuve_data <- inplay_data %>%
+  filter(player_name == "Altuve, Jose")
+
+ggplot(Ohtani_data) + geom_jitter(aes(launch_angle, weight)) + geom_vline(aes(xintercept = as.numeric(la_for_peak_ev("Altuve, Jose")[1])), linetype = "dashed", color = "red")
+
+
+```
