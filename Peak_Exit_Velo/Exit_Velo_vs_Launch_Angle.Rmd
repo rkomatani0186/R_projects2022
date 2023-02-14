@@ -34,7 +34,7 @@ library(ggrepel)
 # dbDisconnect(db)
 
 #Obtain data for MLB season 2021 using function in statcast_scraper.R
-# data <- read.csv("C:/Users/12244/CSV_2021/sc.csv")
+data <- read.csv("C:/Users/12244/CSV_2021/sc.csv")
 
 ```
 
@@ -161,15 +161,15 @@ la_for_peak_ev <- function(batter) {
 
 ## Computing data for balls in play (use qualified_batters for data)
 ```{r}
-#Obtain data for batters with BIP >= 200, and filter data for only balls in play
+#Obtain data for batters with BIP >= 200
 qualified_batters <- data %>%
-  filter(player_name %in% filter_data(data)) %>%
-  filter(type == 'X')
+  filter(player_name %in% filter_data(data)) 
 
 #Obtain total balls in play for a batter
 total_BIP <- function(name, data) {
   h_data <- data %>% 
-    filter(player_name == name)
+    filter(player_name == name,
+           type == 'X')
   return(nrow(h_data))
 }
 
@@ -208,6 +208,44 @@ triple_data <- function(name, data) {
   return(nrow(h_data))
 }
 
+
+woba_data <- function(name, data) {
+  w_data <- data %>%
+    filter(player_name == name)
+  return(mean(w_data$woba_value, na.rm = TRUE))
+}
+
+xwoba_data <- function(name, data) {
+  xw_data <- data %>%
+    filter(player_name == name)
+  return(mean(xw_data$estimated_woba_using_speedangle, na.rm = TRUE))
+}
+
+s_d <- qualified_batters %>%
+  filter(player_name == "Ohtani, Shohei",
+         type == 'X')
+mean(s_d$woba_value, na.rm = TRUE)
+
+swing_and_miss_percentage <- function(name, data) {
+  sw_data <- data %>%
+    filter(player_name == name,
+           description %in% c("foul", "hit_into_play", "swinging_strike_blocked", "swinging_strike", "foul_tip"))
+  sam_data <- sw_data %>%
+    filter(description %in% c("swinging_strike_blocked", "swinging_strike"))
+  return(nrow(sam_data)/nrow(sw_data))
+}
+
+
+foul_percentage <- function(name, data) {
+  sw_data <- data %>%
+    filter(player_name == name,
+           description %in% c("foul", "hit_into_play", "swinging_strike_blocked", "swinging_strike", "foul_tip"))
+  f_data <- sw_data %>%
+    filter(description %in% c("foul", "foul_tip"))
+  return(nrow(f_data)/nrow(sw_data))
+}
+
+
 ```
 
 
@@ -215,9 +253,9 @@ triple_data <- function(name, data) {
 ```{r}
 #Obtain data with batter name, launch angle that gives max exit velocity, and max exit velocity (This includes all contacted balls). 
 la_ev_batter <- function(data) {
-  df <- data.frame(hitter = " ", launch_angle = 0, exit_velo = 0, BIP = 0, single = 0, double = 0, triple = 0, home_run = 0)
+  df <- data.frame(hitter = " ", launch_angle = 0, exit_velo = 0, BIP = 0, single = 0, double = 0, triple = 0, home_run = 0, woba = 0, whiff_rate = 0, foul_percent = 0)
   for(batter in unique(data$player_name)) {
-  new_df <- data.frame(hitter = batter, launch_angle = as.numeric(la_for_peak_ev(batter)[1]), exit_velo = as.numeric(la_for_peak_ev(batter)[2]), BIP = total_BIP(batter, data), single = single_data(batter, data), double = double_data(batter, data), triple = triple_data(batter, data), home_run = home_run_data(batter, data))
+  new_df <- data.frame(hitter = batter, launch_angle = as.numeric(la_for_peak_ev(batter)[1]), exit_velo = as.numeric(la_for_peak_ev(batter)[2]), BIP = total_BIP(batter, data), single = single_data(batter, data), double = double_data(batter, data), triple = triple_data(batter, data), home_run = home_run_data(batter, data), woba = woba_data(batter, data), whiff_rate = swing_and_miss_percentage(batter, data), foul_percent = foul_percentage(batter, data))
   df <- rbind(df, new_df)
   }
   df <- df[-c(1), ]
@@ -329,10 +367,10 @@ sd(ev_top_slg_hitters)
 ```
 Hitters with top home runs and slug tend to have higher peak exit velocity then hitters with high batting average.
 
-## 2 Relationship between Home Run Percentage and Launch Angle + Exit Velocity
+## 2 Relationship between Batting Statistics and Launch Angle that gives maximum exit velocity
 
 ```{r}
-#Get data for qualified batters
+#Add batting statistics for qualified batters
 q_df <- q_data %>%
   mutate(batting_average_for_BIP = (single + double + triple + home_run) / BIP,
          home_run_for_BIP = home_run / BIP,
@@ -342,15 +380,49 @@ q_df <- q_data %>%
 
 
 ```
+```{r}
+#Plot home run per balls in play versus launch angle of qualified batters
+plot_hr <- ggplot(q_df, aes(launch_angle, home_run_for_BIP, label = hitter)) + geom_point() + geom_smooth() + xlab("Launch Angle that Gives Maximum Exit Velocity") + ylab("Home Run Percentage for BIP")
+
+plot_hr
+```
+```{r}
+#Plot slugging percentage run per balls in play versus launch angle of qualified batters
+plot_slug <- ggplot(q_df, aes(launch_angle, slug_for_BIP , label = hitter)) + geom_point() + geom_smooth() +
+  geom_label_repel() + xlab("Launch Angle that Gives Maximum Exit Velocity") + ylab("Slugging Percentage for BIP")
+
+plot_slug
+```
+```{r}
+#Plot home run per balls in play versus launch angle of qualified batters
+plot_ba <- ggplot(q_df, aes(launch_angle, batting_average_for_BIP , label = hitter)) + geom_point() + geom_smooth() +
+  geom_label_repel() + xlab("Launch Angle that Gives Maximum Exit Velocity") + ylab("Batting Average for BIP")
+
+plot_ba
+```
+```{r}
+#Plot home run per balls in play versus launch angle of qualified batters
+plot_woba <- ggplot(q_df, aes(launch_angle, woba, label = hitter)) + geom_point() + geom_smooth() + xlab("Launch Angle that Gives Maximum Exit Velocity") + ylab("Weighted On Base Average")
+
+plot_woba
+```
 
 ```{r}
 #Plot home run per balls in play versus launch angle of qualified batters
-plot_hr <- ggplot(q_df, aes(launch_angle, home_run_for_BIP, label = hitter)) + geom_point() + geom_smooth() +
-  geom_label_repel() + xlab("Launch Angle that Gives Maximum Exit Velocity") + ylab("Home Run Percentage for BIP")
+plot_whiff <- ggplot(q_df, aes(launch_angle, whiff_rate, label = hitter)) + geom_point() + geom_smooth() +
+  geom_label_repel() + xlab("Launch Angle that Gives Maximum Exit Velocity") + ylab("Swing and Miss Percentage")
 
-plot_hr
-
+plot_whiff
 ```
+```{r}
+#Plot home run per balls in play versus launch angle of qualified batters
+plot_foul <- ggplot(q_df, aes(launch_angle, foul_percent, label = hitter)) + geom_point() + geom_smooth() +
+  geom_label_repel() + xlab("Launch Angle that Gives Maximum Exit Velocity") + ylab("Foul Percentage for BIP")
+
+plot_foul
+```
+
+
 ```{r}
 #Home run percentage versus peak exit velocity
 plot_hr2 <- ggplot(q_df, aes(exit_velo, home_run_for_BIP, label = hitter)) + geom_point() + geom_smooth() + 
