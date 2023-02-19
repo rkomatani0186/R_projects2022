@@ -7,6 +7,8 @@ editor_options:
   chunk_output_type: console
 ---
 
+#This Rmd file contains functions that generates Pitching+ and Stuff+; quantities that evaluate how effective a pitch is based on pitch flight metrics. We used Statcast data from 2019 and 2021, and Illini Trackman Baseball Data from 2022 ~ 2023 in the following codes.
+
 #Importing Libraries
 ```{r}
 #Libraries needed
@@ -999,5 +1001,3 @@ ggplot(testing_df %>% filter(pitch_type == "FF"), aes(release_speed, pfx_z)) +
 ```
 
 
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
