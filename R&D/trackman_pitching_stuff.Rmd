@@ -989,15 +989,36 @@ pitching2_stuff2_generator_trackman <- function(df){
 
 ```
 
-# Testing using some trackman data
+# Testing using trackman and MLB data; Sample hexagon plots to verify our model
 ```{r}
 testing_df <- pitching2_stuff2_generator_trackman(head(pitches, 2000))
 
 ggplot(testing_df %>% filter(pitch_type == "FF"), aes(release_speed, pfx_z)) +
   stat_summary_hex(aes(z = Stuff_plus2)) +
   scale_fill_gradientn(colours = c('blue', 'white', 'red')) +
-  ggtitle("FF Stuff+")
-
+  ggtitle("FF Stuff+ for College Level") + xlab("Release Speed (mph)") + ylab("Induced Vertical Movement (ft)")
 ```
+**Comments**
+This hexagon plot depicts Stuff+ for fastballs scaled to college (D1) level, with x-axis depicting release speed and y-axis depicting induced vertical movement, color coded by Stuff+ values. As expected, a fastball that has high velocity and high vertical movement is classified with a high Stuff+ value.
+
+```{r}
+ggplot(mlb_2021 %>% filter(pitch_type == "CH"), aes(release_speed_diff, zmov_diff)) +
+  stat_summary_hex(aes(z = Stuff_plus)) +
+  scale_fill_gradientn(colours = c('blue', 'white', 'red')) +
+  ggtitle("CH Stuff+ for MLB Level") + xlab("Release Speed Difference (mph)") + ylab("Induced Vertical Movement Difference (ft)")
+```
+**Comments**
+This hexagon plot depicts Stuff+ for change-ups scaled to MLB level, with x-axis depicting release speed difference from pitcher's fastest pitch type and y-axis depicting induced vertical movement difference from pitcher's fastest pitch type, color coded by Stuff+ values. As expected, a change-up that has high velocity difference and high vertical movement difference is classified with a high Stuff+ value.
+
+
+```{r}
+ggplot(testing_df %>% filter(pitch_type == "FF"), aes(plate_x, plate_z)) +
+  stat_summary_hex(aes(z = Pitching_plus2)) +
+  scale_fill_gradientn(colours = c('blue', 'white', 'red')) +
+  ggtitle("FF Pitching+ for College Level") + xlab("Horizontal Location (ft)") + ylab("Vertical Location (ft)")
+```
+**Commentary**
+This hexagon plot depicts Pitching+ for fastballs scaled to college (D1) level, with x-axis depicting horizontal location and y-axis depicting vertical location of the pitch, color coded by Pitching+ values. As expected, a fastball that is placed high in the zone has a high Pitching+ value. The worst location to throw a fastball according to this plot is middle low area.
+
 
 
