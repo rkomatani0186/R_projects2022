@@ -216,8 +216,6 @@ la_for_peak_ev_bound("Bregman, Alex", -15, 40)
 
 la_for_peak_ev_bound("Zunino, Mike", -10, 40)
 ```
-
-
 #########################################################################################################
 ```{r}
 #Function to obtain the launch angle that gives the maximum exit velocity when using quadratic fit for all contacted balls
@@ -311,17 +309,13 @@ df_avg = as.data.frame(df_table) %>%
   arrange(desc(peak_aa)) 
 
 #peak attack angle vs peak launch angle, both from hawk-eye
-ggplot(df_avg) + geom_point(aes(avg_aa, peak_la2))
-
-ggplot(df_avg) + geom_point(aes(peak_aa, peak_la2))
-
 ggplot(df_avg) + geom_point(aes(avg_la, peak_la2))
 
 ggplot(df_avg) + geom_point(aes(peak_la, peak_la2))
   
 ggplot(df_avg) + geom_point(aes(avg_aa, peak_la2, color = avg_ev))
 
-ggplot(df_avg) + geom_point(aes(avg_aa, peak_la2, color = peak_ev))
+ggplot(df_avg) + geom_point(aes(peak_aa, peak_la2, color = peak_ev))
 ```
 # Swing Speed vs Exit Velocity
 ```{r}

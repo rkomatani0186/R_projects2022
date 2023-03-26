@@ -3,7 +3,7 @@ title: "Relationship between Launch Angle and Exit Velocity"
 output: html_document
 date: "2022-07-24"
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -521,6 +521,7 @@ colnames(h_data)[colnames(h_data) == "hitter"] <- "player_name"
 colnames(h_data)[colnames(h_data) == "exit_velo"] <- "max_ev"
 ev_data <- h_data %>%
   select(player_name, max_ev)
+#Add max exit velocity and scaled exit velocity to all data
 new_data <- inner_join(sc, ev_data, by = c("player_name"))
 new_data2 <- new_data %>%
   select(player_name, max_ev, launch_angle, launch_speed, description, events) %>%
@@ -730,19 +731,25 @@ plot_ev_vs_la_by_events("Shohei Ohtani")
 ```
 
 ```{r}
-plot_scaled_ev_vs_la_by_events("Mike Zunino")
+plot_scaled_ev_vs_la_by_events("Yuli Gurriel")
+#https://www.mlb.com/video/yuli-gurriel-homers-1-on-a-fly-ball-to-left-field-svadgo
+
+# plot_scaled_ev_vs_la_by_events("Mike Zunino")
 # https://www.mlb.com/video/mike-zunino-homers-17-on-a-fly-ball-to-left-field-bkqlms
 # https://www.mlb.com/video/mike-zunino-homers-28-on-a-fly-ball-to-left-field
-plot_ev_vs_la_by_events("Mike Zunino")
+# plot_ev_vs_la_by_events("Mike Zunino")
 # https://www.mlb.com/video/lucas-giolito-in-play-run-s-to-mike-zunino?q=mike%20zunino&cp=CMS_FIRST&qt=FREETEXT&p=0
 # https://www.mlb.com/video/mike-zunino-homers-4-on-a-fly-ball-to-left-field-randy-arozarena-scores-i?q=Mike%20Zunino&cp=CMS_FIRST&qt=FREETEXT&p=0 
 ```
 
 ```{r}
-plot_scaled_ev_vs_la_by_events("David Fletcher")
+plot_scaled_ev_vs_la_by_events("Joey Gallo")
+#https://www.youtube.com/watch?v=-sBE5U6FAnA&t=4s
+
+# plot_scaled_ev_vs_la_by_events("David Fletcher")
 # https://www.mlb.com/video/ervin-santana-in-play-run-s-to-david-fletcher
 # https://www.mlb.com/video/david-fletcher-s-productive-day?q=David%20Fletcher&cp=CMS_FIRST&qt=FREETEXT&p=1
-plot_ev_vs_la_by_events("David Fletcher")
+# plot_ev_vs_la_by_events("David Fletcher")
 # https://www.youtube.com/watch?v=cJJVW-8ugk0
 # https://www.mlb.com/video/cole-irvin-in-play-run-s-to-david-fletcher-ginmiz?q=david%20fletcher&cp=CMS_FIRST&qt=FREETEXT&p=0
 ```
@@ -811,22 +818,28 @@ ggarrange(p_hit, p_hr, p_ewoba)
 ```{r}
 plot_hit_prob_batter <- function(name) {
   batter <- name_converter(name)
-  ggplot(new_data_BIP2 %>% filter (player_name == batter)) + geom_point(aes(launch_angle, prob_Hit, color = launch_speed)) + geom_vline(aes(xintercept = as.numeric(la_for_peak_ev(name)[1])), linetype = "dashed") + annotate(geom = "text", label = as.numeric(la_for_peak_ev(name)[1]), x = as.numeric(la_for_peak_ev(name)[1]), y = 0, vjust = 1) + scale_colour_gradientn(colours = (rainbow(5))) + labs(title = paste(name, "Hit Probability")) + scale_x_continuous(name = "Launch Angle (deg)", limits = c(-80, 80)) + scale_y_continuous(name = "Hit Probability", limits = c(-0.1, 1.1)) 
+  ggplot(new_data_BIP2 %>% filter (player_name == batter)) + geom_point(aes(launch_angle, prob_Hit, color = launch_speed)) + geom_vline(aes(xintercept = as.numeric(la_for_peak_ev(name)[1])), linetype = "dashed") + annotate(geom = "text", label = as.numeric(la_for_peak_ev(name)[1]), x = as.numeric(la_for_peak_ev(name)[1]), y = 0, vjust = 1) + scale_colour_gradientn(colours = (rainbow(5)), limits = c(25, 130)) + labs(title = paste(name, "Hit Probability")) + scale_x_continuous(name = "Launch Angle (deg)", limits = c(-80, 80)) + scale_y_continuous(name = "Hit Probability", limits = c(-0.1, 1.1)) 
 }
 
-ggarrange(plot_hit_prob_batter("Shohei Ohtani"),plot_hit_prob_batter("Jose Altuve"), plot_hit_prob_batter("David Fletcher"), plot_hit_prob_batter("Mike Zunino"))
+#scale_colour_gradientn(colours = (rainbow(5)))
+
+ggarrange(plot_hit_prob_batter(q_data$hitter[1]), plot_hit_prob_batter(q_data$hitter[2]), plot_hit_prob_batter(q_data$hitter[3]), plot_hit_prob_batter(q_data$hitter[nrow(q_data)]), plot_hit_prob_batter(q_data$hitter[nrow(q_data) - 1]), plot_hit_prob_batter(q_data$hitter[nrow(q_data) - 2]))
+
+ggarrange(plot_hit_prob_batter("Shohei Ohtani"),plot_hit_prob_batter("Jose Altuve"), plot_hit_prob_batter("Yuli Gurriel"), plot_hit_prob_batter("Joey Gallo"))
 ```
 
 # Comparing homerun probability vs launch angle for single players
 ```{r}
 plot_hr_prob_batter <- function(name) {
   batter <- name_converter(name)
-  ggplot(new_data_BIP2 %>% filter (player_name == batter)) + geom_point(aes(launch_angle, prob_HR, color = launch_speed)) + geom_vline(aes(xintercept = as.numeric(la_for_peak_ev(name)[1])), linetype = "dashed") + annotate(geom = "text", label = as.numeric(la_for_peak_ev(name)[1]), x = as.numeric(la_for_peak_ev(name)[1]), y = 0, vjust = 1) + scale_colour_gradientn(colours = (rainbow(5))) + labs(title = paste(name, "HR Probability")) + scale_x_continuous(name = "Launch Angle (deg)", limits = c(-80, 80)) + scale_y_continuous(name = "HR Probability", limits = c(-0.1, 1.1)) 
+  ggplot(new_data_BIP2 %>% filter (player_name == batter)) + geom_point(aes(launch_angle, prob_HR, color = launch_speed)) + geom_vline(aes(xintercept = as.numeric(la_for_peak_ev(name)[1])), linetype = "dashed") + annotate(geom = "text", label = as.numeric(la_for_peak_ev(name)[1]), x = as.numeric(la_for_peak_ev(name)[1]), y = 0, vjust = 1) + scale_colour_gradientn(colours = (rainbow(5)), limits = c(25, 130)) + labs(title = paste(name, "HR Probability")) + scale_x_continuous(name = "Launch Angle (deg)", limits = c(-80, 80)) + scale_y_continuous(name = "HR Probability", limits = c(-0.1, 1.1)) 
 }
 
-ggarrange(plot_hr_prob_batter("Shohei Ohtani"),plot_hr_prob_batter("Jose Altuve"), plot_hr_prob_batter("David Fletcher"), plot_hr_prob_batter("Mike Zunino"))
+ggarrange(plot_hr_prob_batter("Shohei Ohtani"),plot_hr_prob_batter("Jose Altuve"), plot_hr_prob_batter("Yuli Gurriel"), plot_hr_prob_batter("Joey Gallo"))
 
 ```
+
+
 
 
 

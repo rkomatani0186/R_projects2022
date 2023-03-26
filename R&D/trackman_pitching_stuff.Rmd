@@ -1,15 +1,23 @@
 ---
-title: "Obtaining Pitching+ and Stuff+ for Trackman Data"
+title: "Obtaining Pitching+ and Stuff+ for TrackMan and Statcast Data"
 author: "Riku Komatani"
 date: "2023-02-03"
-output: html_document
-editor_options: 
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
   chunk_output_type: console
 ---
 
-#This Rmd file contains functions that generates Pitching+ and Stuff+; quantities that evaluate how effective a pitch is based on pitch flight metrics. We used Statcast data from 2019 and 2021, and Illini Trackman Baseball Data from 2022 ~ 2023 in the following codes.
+This Rmd file contains functions that generates Pitching+ and Stuff+; quantities that evaluate how effective a pitch is based on pitch flight metrics. We used Statcast data from 2019 and 2021, and Illini TrackMan Baseball Data from 2022 ~ 2023 in the following codes.
 
-#Importing Libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+Importing Libraries
 ```{r}
 #Libraries needed
 library(tidyverse)
@@ -28,11 +36,13 @@ library(gbm)
 library(ROCR)
 library(data.table)
 library(illinibaseball)
+library(DBI)
+library(RMySQL)
 ```
 
-## Steps 1 ~ 5: Creating models for different pitch types using 2019 MLB Statcast data
+**Steps 1 ~ 5:** Creating models for different pitch types using 2019 MLB Statcast data.
 
-# Step 1: Getting 2019 MLB Statcast data ready
+**Step 1:** Getting 2019 MLB Statcast data ready.
 ```{r}
 #Import data: Use any season after 2015 from Statcast
 sc_2019 <- read_csv("C:/Users/12244/STAT430/statcast/2019.csv")
@@ -65,7 +75,7 @@ sc_2019_3 <- sc_2019_2 %>%
   mutate(play = as.factor(play))
 ```
 
-# Step 2: Adding velocity and movement differences from pitcher's fastest pitch type for offspeed pitches onto 2019 MLB Statcast data.
+**Step 2:** Adding velocity and movement differences from pitcher's fastest pitch type for offspeed pitches onto 2019 MLB Statcast data.
 ```{r}
 #Obtain velocity and movement difference from pitcher's fastest pitch type for non fastest pitch types by using data table
 dt_19 <- setDT(sc_2019_3)
@@ -105,7 +115,7 @@ dt3_19 <- dt2_19[, ':='(release_speed_diff = fifelse(pitch_type != fastest_pitch
 sc_2019_4 <- as.data.frame(dt3_19)
 ```
 
-# Step 3: Separating 2019 MLB Statcast data to different pitch types.
+**Step 3:** Separating 2019 MLB Statcast data to different pitch types.
 ```{r}
 #Assign data to different pitch types
 sc_2019_FF <- sc_2019_4 %>%
@@ -128,7 +138,7 @@ sc_2019_SL <- sc_2019_4 %>%
 
 ```
 
-# Step 4: Creating Models for Pitching+ (probability of contact based on pitch flight metrics with location) for each pitch types using 2019 MLB Statcast data. (This might take a while to run ~ 5min)
+**Step 4:** Creating Models for Pitching+ (probability of contact based on pitch flight metrics with location) for each pitch types using 2019 MLB Statcast data. (This might take a while to run ~ 5min).
 ```{r}
 ###With Location: Swing probability based on location and pitch quality
 
@@ -274,7 +284,7 @@ ntree_opt_cv_SL <- gbm.perf(SimpleGBMModel_SL, method = "cv")
 
 ```
 
-# Step 5: Creating Models for Stuff+ (probability of contact based on pitch flight metrics without location) for each pitch types using 2019 MLB Statcast data (This might take a while to run ~ 5min)
+**Step 5:** Creating Models for Stuff+ (probability of contact based on pitch flight metrics without location) for each pitch types using 2019 MLB Statcast data. (This might take a while to run ~ 5min).
 ```{r}
 ################Without location: Swing probability only based on pitch quality
 
@@ -418,9 +428,9 @@ ntree_opt_cv_SL_2 <- gbm.perf(SimpleGBMModel_SL_2, method = "cv")
 
 ```
 
-## Steps 6 ~ 8: Adding Pitching+ and Stuff+ to 2021 MLB data
+**Steps 6 ~ 8:** Adding Pitching+ and Stuff+ to 2021 MLB data.
 
-# Step 6: Function used in Step 7 to convert predicted probability of contact to Pitching+ and Stuff+ values. (The input data for this function needs to be at least a full season of MLB data to normalize properly and obtain meaningful results)
+**Step 6:** Function used in Step 7 to convert predicted probability of contact to Pitching+ and Stuff+ values (The input data for this function needs to be at least a full season of MLB data to normalize properly and obtain meaningful results).
 ```{r}
 #Function to convert predicted probability of contact to Pitching+ and Stuff+
 prob_to_pitch_stuff <- function(data, pred_pitch, pred_stuff) {
@@ -450,7 +460,7 @@ prob_to_pitch_stuff <- function(data, pred_pitch, pred_stuff) {
 }
 ```
 
-# Step 7: Function for adding Pitching+ and Stuff+ to MLB data using models created in Step 3 and 4.
+**Step 7:** Function for adding Pitching+ and Stuff+ to MLB data using models created in Step 3 and 4.
 ```{r}
 #Function that adds Pitching plus and Stuff plus into data
 pitching_stuff_generator <- function(df) {
@@ -608,17 +618,17 @@ pitching_stuff_generator <- function(df) {
 
 ```
 
-# Step 8: Obtaining 2021 MLB Statcast data with contact probabilities using the function in Step 7.
+**Step 8:** Obtaining 2021 MLB Statcast data with contact probabilities using the function in Step 7.
 ```{r}
-#Obtain MLB 2021 season contact probabilities to compare and normalize with trackman data
+#Obtain MLB 2021 season contact probabilities to compare and normalize with TrackMan data
 sc_2021 <- read_csv("C:/Users/12244/STAT430/statcast/2021.csv")
 mlb_2021 <- pitching_stuff_generator(sc_2021)
 
 ```
 
-## Steps 9 ~ 13: Getting Pitching+ and Stuff+ for Trackman (college) data
+**Steps 9 ~ 13:** Getting Pitching+ and Stuff+ for TrackMan (college) data.
 
-# Step 9: Obtaining trackman data from UIUC database
+**Step 9:** Obtaining TrackMan data from UIUC database.
 ```{r}
 query = "SELECT * FROM tm_pitches
          WHERE Season = 2023 OR Season = 2022
@@ -629,7 +639,7 @@ dbDisconnect(con)
 
 ```
 
-# Step 10: Function for adjusting Trackman data to match Statcast column names
+**Step 10:** Function for adjusting TrackMan data to match Statcast column names.
 ```{r}
   #Auto or Tagged?
 trackman_adjuster <- function(trackman_data) {
@@ -673,7 +683,7 @@ trackman_adjuster <- function(trackman_data) {
 }
 ```
 
-# Step 11: Function for adding player's fastest pitch info for Trackman data. (similar to Step 2)
+**Step 11:** Function for adding player's fastest pitch info for TrackMan data (similar to Step 2).
 ```{r}
 #Use all track man data given in the past
 fastest_pitch_info_getter <- function(trackman_data) {
@@ -716,7 +726,7 @@ trackman_data_adjusted_with_pitcher_fastest <- fastest_pitch_info_getter(pitches
 
 ```
 
-# Step 12: Function used in Step 13, which obtains the MLB scaled predicted contact probability of the input trackman data, by comparing it to 2021 MLB contact probabilities obtained in Step 8. This function also converts this predicted probability of contact to Pitching+ and Stuff+ values.
+**Step 12:** Function used in Step 13, which obtains the MLB scaled predicted contact probability of the input TrackMan data, by comparing it to 2021 MLB contact probabilities obtained in Step 8. This function also converts this predicted probability of contact to Pitching+ and Stuff+ values.
 ```{r}
 #Function to convert predicted probability of contact to Pitching+ and Stuff+
 trackman_prob_to_pitch_stuff <- function(trackman_data, pred_pitch_trackman, pred_stuff_trackman) {
@@ -743,7 +753,7 @@ trackman_prob_to_pitch_stuff <- function(trackman_data, pred_pitch_trackman, pre
 
   percentile_pitch_adj <- 200 - percentile_pitch * 100 * 2
 
-  #Extract percentiles from trackman data and add it to trackman data
+  #Extract percentiles from TrackMan data and add it to TrackMan data
   trackman_data$Pitching_plus = percentile_pitch_adj[1:nrow(trackman_data)]
 
   #Adding Stuff+ to data
@@ -755,19 +765,19 @@ trackman_prob_to_pitch_stuff <- function(trackman_data, pred_pitch_trackman, pre
 
   percentile_stuff_adj <- 200 - percentile_stuff * 100 * 2
 
-  #Extract percentiles from trackman data and add it to trackman data
+  #Extract percentiles from TrackMan data and add it to TrackMan data
   trackman_data$Stuff_plus = percentile_stuff_adj[1:nrow(trackman_data)]
   
   return(trackman_data)
 }
 ```
 
-# Step 13: Function for adding MLB scaled Pitching+ and Stuff+ to trackman data using the models from Step 4 and 5. 
+**Step 13:** Function for adding MLB scaled Pitching+ and Stuff+ to TrackMan data using the models from Step 4 and 5.
 ```{r}
 #Function that adds Pitching plus and Stuff plus into data
 pitching_stuff_generator_trackman <- function(df) {
   
-  #Adjust trackman data to fit statcast column names and add required columns
+  #Adjust TrackMan data to fit statcast column names and add required columns
   df_valid <- trackman_adjuster(df)
 
   #Add pitcher's fastest pitch type info to data
@@ -909,15 +919,15 @@ pitching_stuff_generator_trackman <- function(df) {
   return(data_full)
 }
 
-#Add Pitching+ and Stuff+ to trackman data
+#Add Pitching+ and Stuff+ to TrackMan data
 trackman_df <- pitching_stuff_generator_trackman(pitches)
 ```
 
-## Steps 14 ~ 15: Obtaining college scaled Pitching++ and Stuff++ for Trackman data
+**Steps 14 ~ 15:** Obtaining college scaled Pitching++ and Stuff++ for TrackMan data.
 
-# Step 14: Function used in Step 15 for scaling the obtained MLB level Pitching+ and Stuff+ data to college level by comparing it to all the available trackman data obtained in last part of Step 13.
+**Step 14:** Function used in Step 15 for scaling the obtained MLB level Pitching+ and Stuff+ data to college level by comparing it to all the available TrackMan data obtained in last part of Step 13.
 ```{r}
-#Add Pitching++ and Stuff++ (normalized Pitching+ and Stuff+ based on trackman data) to trackman data
+#Add Pitching++ and Stuff++ (normalized Pitching+ and Stuff+ based on TrackMan data) to TrackMan data
 scale_to_college <- function(input_data) {
 
   #Return null if input data doesn't contain that pitch type
@@ -927,7 +937,7 @@ scale_to_college <- function(input_data) {
   
   pitch = input_data$pitch_type[1]
   
-  #Filter trackman data to the input pitch type
+  #Filter TrackMan data to the input pitch type
   trackman_df_pitch <- trackman_df %>%
     filter(pitch_type == pitch)
 
@@ -946,7 +956,7 @@ scale_to_college <- function(input_data) {
 
   percentile_pitch_adj <- percentile_pitch * 100 * 2
 
-  #Extract percentiles from trackman data and add it to trackman data
+  #Extract percentiles from TrackMan data and add it to TrackMan data
   input_data$Pitching_plus2 = percentile_pitch_adj[1:nrow(input_data)]
 
   #Adding Stuff+ to data
@@ -958,7 +968,7 @@ scale_to_college <- function(input_data) {
 
   percentile_stuff_adj <- percentile_stuff * 100 * 2
 
-  #Extract percentiles from trackman data and add it to trackman data
+  #Extract percentiles from TrackMan data and add it to TrackMan data
   input_data$Stuff_plus2 = percentile_stuff_adj[1:nrow(input_data)]
   
   return(input_data)
@@ -966,9 +976,9 @@ scale_to_college <- function(input_data) {
 
 ```
 
-# Step 15: Function that adds Pitching++ and Stuff++ to data. Function in Step 12 is used to add MLB scaled Pitching+ and Stuff+. Then, the scaling technique in Step 14 is used to convert those values into college level Pitching++ and Stuff++ values.
+**Step 15:** Function that adds Pitching++ and Stuff++ to data. Function in Step 12 is used to add MLB scaled Pitching+ and Stuff+. Then, the scaling technique in Step 14 is used to convert those values into college level Pitching++ and Stuff++ values.
 ```{r}
-#Add Pitching++ and Stuff++ to trackman data
+#Add Pitching++ and Stuff++ to TrackMan data
 pitching2_stuff2_generator_trackman <- function(df){
   
   #Add Pitching+ and Stuff+ to input data
@@ -989,36 +999,45 @@ pitching2_stuff2_generator_trackman <- function(df){
 
 ```
 
-# Testing using trackman and MLB data; Sample hexagon plots to verify our model
+Testing using TrackMan and MLB data; sample hexagon plots to verify our model.
 ```{r}
+#Generating testing data from TrackMan data
 testing_df <- pitching2_stuff2_generator_trackman(head(pitches, 2000))
 
+#Fastball Stuff+ for college level
 ggplot(testing_df %>% filter(pitch_type == "FF"), aes(release_speed, pfx_z)) +
   stat_summary_hex(aes(z = Stuff_plus2)) +
   scale_fill_gradientn(colours = c('blue', 'white', 'red')) +
   ggtitle("FF Stuff+ for College Level") + xlab("Release Speed (mph)") + ylab("Induced Vertical Movement (ft)")
 ```
+
 **Comments**
+
 This hexagon plot depicts Stuff+ for fastballs scaled to college (D1) level, with x-axis depicting release speed and y-axis depicting induced vertical movement, color coded by Stuff+ values. As expected, a fastball that has high velocity and high vertical movement is classified with a high Stuff+ value.
 
 ```{r}
+#Change-up Stuff+ for MLB level
 ggplot(mlb_2021 %>% filter(pitch_type == "CH"), aes(release_speed_diff, zmov_diff)) +
   stat_summary_hex(aes(z = Stuff_plus)) +
   scale_fill_gradientn(colours = c('blue', 'white', 'red')) +
   ggtitle("CH Stuff+ for MLB Level") + xlab("Release Speed Difference (mph)") + ylab("Induced Vertical Movement Difference (ft)")
 ```
+
 **Comments**
+
 This hexagon plot depicts Stuff+ for change-ups scaled to MLB level, with x-axis depicting release speed difference from pitcher's fastest pitch type and y-axis depicting induced vertical movement difference from pitcher's fastest pitch type, color coded by Stuff+ values. As expected, a change-up that has high velocity difference and high vertical movement difference is classified with a high Stuff+ value.
 
-
 ```{r}
-ggplot(testing_df %>% filter(pitch_type == "FF"), aes(plate_x, plate_z)) +
-  stat_summary_hex(aes(z = Pitching_plus2)) +
+#Fastball Pitching+ for MLB level
+ggplot(mlb_2021 %>% filter(pitch_type == "FF"), aes(plate_x, plate_z)) +
+  stat_summary_hex(aes(z = Pitching_plus)) +
   scale_fill_gradientn(colours = c('blue', 'white', 'red')) +
-  ggtitle("FF Pitching+ for College Level") + xlab("Horizontal Location (ft)") + ylab("Vertical Location (ft)")
+  ggtitle("FF Pitching+ for MLB Level") + xlab("Horizontal Location (ft)") + ylab("Vertical Location (ft)")
 ```
-**Commentary**
-This hexagon plot depicts Pitching+ for fastballs scaled to college (D1) level, with x-axis depicting horizontal location and y-axis depicting vertical location of the pitch, color coded by Pitching+ values. As expected, a fastball that is placed high in the zone has a high Pitching+ value. The worst location to throw a fastball according to this plot is middle low area.
+
+**Comments**
+
+This hexagon plot depicts Pitching+ for fastballs scaled to MLB level, with x-axis depicting horizontal location and y-axis depicting vertical location of the pitch, color coded by Pitching+ values. As expected, a fastball that is placed high in the zone has a high Pitching+ value. The worst location to throw a fastball according to this plot is middle low area.
 
 
 

@@ -331,9 +331,9 @@ compare_plots <- function(name, aa, lower_la, upper_la) {
     stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_10_data, aes(launch_angle, scaled_ev), color = "black", se = FALSE) +
     geom_vline(aes(xintercept = top_10_data$launch_angle[which.max(predict(quadratic_fit))]), linetype = "dashed") +
     ggtitle(paste("Exit Velocity vs Launch Angle of", name)) +
-    scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-40, 80, by = 10)) +
-    scale_y_continuous(name = "Scaled Exit Velocity (mph)", breaks = seq(0.9, 1.1, by = 0.01)) +
-    annotate(geom = "text", label = top_10_data$launch_angle[which.max(predict(quadratic_fit))], x = top_10_data$launch_angle[which.max(predict(quadratic_fit))], y = 1, vjust = 1) + 
+    scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-90, 90, by = 10)) +
+    scale_y_continuous(name = "Scaled Exit Velocity (mph)", breaks = seq(0, 1.1, by = 0.1)) +
+    annotate(geom = "text", label = top_10_data$launch_angle[which.max(predict(quadratic_fit))], x = top_10_data$launch_angle[which.max(predict(quadratic_fit))], y = 1.1, vjust = 1) + 
     #Combine with contour plot data
     geom_point(data = data_aa, aes(launch_angle, scaled_ev)) 
 }
@@ -416,9 +416,9 @@ compare_plots2 <- function(name, aa, lower_la, upper_la) {
     stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_10_data, aes(launch_angle, scaled_ev), color = "black", se = FALSE) +
     geom_vline(aes(xintercept = top_10_data$launch_angle[which.max(predict(quadratic_fit))]), linetype = "dashed") +
     ggtitle(paste("Scaled Exit Velocity vs Launch Angle of", name)) +
-    scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-40, 80, by = 10)) +
-    scale_y_continuous(name = "Scaled Exit Velocity (mph)", breaks = seq(0.9, 1.1, by = 0.01)) +
-    annotate(geom = "text", label = top_10_data$launch_angle[which.max(predict(quadratic_fit))], x = top_10_data$launch_angle[which.max(predict(quadratic_fit))], y = 1, vjust = 1) + 
+    scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-90, 90, by = 10)) +
+    scale_y_continuous(name = "Scaled Exit Velocity (mph)", breaks = seq(0, 1.1, by = 0.1)) +
+    annotate(geom = "text", label = top_10_data$launch_angle[which.max(predict(quadratic_fit))], x = top_10_data$launch_angle[which.max(predict(quadratic_fit))], y = 1.1, vjust = 1) + 
     #Combine with contour plot data
     geom_point(data = data_aa, aes(launch_angle, scaled_ev2))
 }
@@ -426,7 +426,16 @@ compare_plots2 <- function(name, aa, lower_la, upper_la) {
 
 compare_plots2("Ohtani, Shohei", 17, -90, 90)
 compare_plots2("Altuve, Jose", 17, -90, 90)
+```
 
+```{r}
+# Comparing plots for players with low peak launch angle
+ggarrange(compare_plots2(q_data$hitter[1], 6, -90, 90), compare_plots2(q_data$hitter[2], 6, -90, 90), compare_plots2(q_data$hitter[3], 6, -90, 90), compare_plots2(q_data$hitter[4], 6, -90, 90), compare_plots2(q_data$hitter[5], 6, -90, 90), compare_plots2(q_data$hitter[6], 6, -90, 90), compare_plots2(q_data$hitter[7], 6, -90, 90), compare_plots2(q_data$hitter[8], 6, -90, 90), compare_plots2(q_data$hitter[9], 6, -90, 90), compare_plots2(q_data$hitter[10], 6, -90, 90))
+```
+
+```{r}
+# Comparing plots for players with high peak launch angle
+ggarrange(compare_plots2(q_data$hitter[nrow(q_data)], 24, -90, 90), compare_plots2(q_data$hitter[nrow(q_data) - 1], 22, -90, 90), compare_plots2(q_data$hitter[nrow(q_data) - 2], 22, -90, 90), compare_plots2(q_data$hitter[nrow(q_data) - 3], 22, -90, 90), compare_plots2(q_data$hitter[nrow(q_data) - 4], 22, -90, 90), compare_plots2(q_data$hitter[nrow(q_data) - 5], 22, -90, 90), compare_plots2(q_data$hitter[nrow(q_data) - 6], 22, -90, 90), compare_plots2(q_data$hitter[nrow(q_data) - 7], 22, -90, 90), compare_plots2(q_data$hitter[nrow(q_data) - 8], 22, -90, 90), compare_plots2(q_data$hitter[nrow(q_data) - 9], 22, -90, 90))
 ```
 
 ```{r}
@@ -434,11 +443,8 @@ ggplot(data_AA_CA %>% filter(AA == 17)) + geom_point(aes(launch_angle, scaled_ev
 ```
 
 
-
-
-
-
-
+Not good method below.
+## Plot each player's data on AA vs CA graph
 ```{r}
 get_player_data <- function(player_name) {
   data_player <- data_AA_CA %>%
@@ -448,7 +454,7 @@ get_player_data <- function(player_name) {
   return(data_player[1,])
 }
 
-top_hr_hitters <- c("Perez, Salvador", "Guerrero Jr., Vladimir","Ohtani, Shohei", "Semien, Marcus", "Tatis Jr., Fernando", "Judge, Aaron", "Olson, Matt", "Haniger, Mitch" ,"Lowe, Brandon", "Devers, Rafael")
+top_hr_hitters <- c("Perez, Salvador", "Guerrero Jr., Vladimir", "Ohtani, Shohei", "Semien, Marcus", "Tatis Jr., Fernando", "Judge, Aaron", "Olson, Matt", "Haniger, Mitch" ,"Lowe, Brandon", "Devers, Rafael")
 
 top_avg_hitters <- c("Turner, Trea", "Gurriel, Yuli", "Soto, Juan", "Brantley, Michael", "Guerrero Jr., Vladimir", "Marte, Starling", "Harper, Bryce", "Anderson, Tim", "Castellanos, Nick", "Frazier, Adam") 
 
