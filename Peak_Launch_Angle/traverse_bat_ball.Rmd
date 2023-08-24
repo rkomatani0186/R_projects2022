@@ -1,0 +1,992 @@
+---
+title: "Transverse Ball-Bat Collision"
+output: html_document
+date: "2022-08-22"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r}
+#Import packages
+library(ggplot2)
+library(dplyr)
+library(ggrepel)
+library(metR)
+```
+
+## Hawkeye Data
+```{r}
+hawk_data <- read.csv("C:/Users/12244/Baseball_2023/Alan_bat_data.csv")
+hawk_data_inplay <- hawk_data %>%
+  filter(hit_into_play_group != "")
+
+hawk_data_inplay_player <- hawk_data_inplay %>%
+  group_by(batter_name) %>%
+  dplyr::summarize(mean_attack_angle = mean(sample_vert_attack_angle),
+                   median_attack_angle = median(sample_vert_attack_angle),
+                   count = n()) %>%
+  filter(count > 60)
+```
+
+# 1. Data Preparation
+## Constants
+```{r}
+#Constants:
+pitch_speed = 84.8 #mph (84.8, 93.9, 55)
+descent_angle = 8.0 #degrees (8.0, 5, 5)
+bat_speed = 73.0 #mph (73.0, 80.0, 200)
+attack_angle = 12.0 #degrees
+pitch_spin = -2000 #rpm (-2000, -1500)
+
+mball = 5.125 #oz
+mbat = 31.494 #oz
+rball = 1.452 #in
+rbat = 1.267 #in
+
+gamma = descent_angle * pi / 180 #rad
+psi = attack_angle * pi / 180 #rad
+
+mu = 0.5500
+alpha = 0.400
+mbateff_x = 7.817 #oz
+recoilx = 2 / 7 * mball / mbateff_x
+
+v0ball = pitch_speed * 5280 * 12 / 3600 #ft/s
+v0bat = bat_speed * 5280 * 12 / 3600 #ft/s
+mbateff_y = 23.172 #oz
+
+recoily = mball / mbateff_y
+
+ex = 0.300
+eT = (ex - recoilx) / (1 + recoilx)
+omegai = pitch_spin * pi / 30 #rad/s 
+
+```
+
+## Function for Generating Data from Offsets
+```{r}
+#Function for obtaining data with offset as input
+generate_data_from_offset <- function(offset) {
+  theta = asin(offset / (rball + rbat)) #rad
+  centerline_angle = theta * 180 / pi #degree
+  D = (rball + rbat) * sin(theta - psi) #inch
+  v0ball_perp = v0ball * cos(theta - gamma) #ft/s
+  v0bat_perp = v0bat * cos(theta - psi) #ft/s
+  ey = 0.58 - (v0ball_perp + v0bat_perp - 1055) / 14094
+  eA = (ey - recoily) / (1 + recoily)
+  v0ball_T = v0ball * sin(theta - gamma) #ft/s
+  v0bat_T = - v0bat * sin(theta - psi) #ft/s
+  
+  mulim = 0.55
+    
+  vfball_perp = v0ball_perp * eA + v0bat_perp * (1 + eA) #ft/s
+  vfball_T = v0ball_T * (1 - alpha * eT) / (1 + alpha) + rball * omegai * alpha * (1 + eT) / (1 + alpha) + v0bat_T * alpha * (1 + eT) / (1 + alpha) #ft/s
+  
+  angle = atan(vfball_T / vfball_perp) + theta #rad
+  
+  launch_angle = angle * 180 / pi # degrees
+    
+  omegaf = omegai + (v0ball_T - vfball_T) / (alpha * rball) #rad / s
+  
+  exit_speed = sqrt(vfball_perp^2 + vfball_T^2) / (5280 * 12 / 3600) #mph
+  
+  exit_spin = omegaf * 30 / pi #rpm
+  
+  mulim = abs(v0ball_T - vfball_T) / (v0ball_perp + vfball_perp)
+  
+  df <- data.frame(offset = offset,
+                   centerline_angle = centerline_angle,
+                   D = D,
+                   exit_speed = exit_speed,
+                   exit_spin = exit_spin,
+                   launch_angle = launch_angle,
+                   v0ball_perp = v0ball_perp,
+                   v0bat_perp = v0bat_perp,
+                   ey = ey,
+                   eA = eA,
+                   v0ball_T = v0ball_T,
+                   v0bat_T = v0bat_T,
+                   omegaf = omegaf,
+                   vfball_perp = vfball_perp,
+                   vfball_T = vfball_T,
+                   angle = angle,
+                   mulim = mulim)
+                   
+  return(df)
+}
+```
+
+## Generating Data from Offsets
+```{r}
+#Make new column with column names of data
+columns <- c('offset', 'centerline_angle', 'D', 'exit_speed', 'exit_spin', 'launch_angle', 'v0ball_perp', 'v0bat_perp', 'ey', 'eA', 'v0ball_T', 'v0bat_T', 'omegaf', 'vfball_perp', 'vfball_T', 'angle', 'mulim')
+
+df <- data.frame(matrix(nrow = 0, ncol = length(columns)))
+
+colnames(df) = columns
+
+#Offset values
+offset_values = seq(0, 2.60, by = 0.05)
+
+#Obtain data for every offset values
+for (value in offset_values) {
+  new_df <- generate_data_from_offset(value)
+  df <- rbind(df, new_df)
+}
+```
+
+## Function for Generating Data from CA & AA
+```{r}
+#Function for obtaining data with center line angle and attack angle as parameters
+generate_data_from_ca_aa <- function(CA, AA) {
+  psi = AA * pi / 180 #rad
+  theta = CA / 180 * pi #rad
+  offset = sin(theta) * (rball + rbat) #inch
+  D = (rball + rbat) * sin(theta - psi) #inch
+  v0ball_perp = v0ball * cos(theta - gamma) #ft/s
+  v0bat_perp = v0bat * cos(theta - psi) #ft/s
+  ey = 0.58 - (v0ball_perp + v0bat_perp - 1055) / 14094
+  eA = (ey - recoily) / (1 + recoily)
+  v0ball_T = v0ball * sin(theta - gamma) #ft/s
+  v0bat_T = - v0bat * sin(theta - psi) #ft/s
+  
+  mulim = 0.55
+    
+  vfball_perp = v0ball_perp * eA + v0bat_perp * (1 + eA) #ft/s
+  vfball_T = v0ball_T * (1 - alpha * eT) / (1 + alpha) + rball * omegai * alpha * (1 + eT) / (1 + alpha) + v0bat_T * alpha * (1 + eT) / (1 + alpha) #ft/s
+  
+  angle = atan(vfball_T / vfball_perp) + theta #rad
+  
+  launch_angle = angle * 180 / pi # degrees
+    
+  omegaf = omegai + (v0ball_T - vfball_T) / (alpha * rball) #rad / s
+  
+  exit_speed = sqrt(vfball_perp^2 + vfball_T^2) / (5280 * 12 / 3600) #mph
+  
+  exit_spin = omegaf * 30 / pi #rpm
+  
+  mulim = abs(v0ball_T - vfball_T) / (v0ball_perp + vfball_perp)
+  
+  df <- data.frame(AA = AA,
+                   CA = CA,
+                   offset = offset,
+                   D = D,
+                   exit_speed = exit_speed,
+                   exit_spin = exit_spin,
+                   launch_angle = launch_angle,
+                   v0ball_perp = v0ball_perp,
+                   v0bat_perp = v0bat_perp,
+                   ey = ey,
+                   eA = eA,
+                   v0ball_T = v0ball_T,
+                   v0bat_T = v0bat_T,
+                   omegaf = omegaf,
+                   vfball_perp = vfball_perp,
+                   vfball_T = vfball_T,
+                   angle = angle,
+                   mulim = mulim)
+  return(df)
+}
+```
+
+## Generating Data from CA & AA
+```{r}
+#Make new column with column names of data
+columns_AA_CA <- c('AA', 'CA', 'offset', 'D', 'exit_speed', 'exit_spin', 'launch_angle', 'v0ball_perp', 'v0bat_perp', 'ey', 'eA', 'v0ball_T', 'v0bat_T', 'omegaf', 'vfball_perp', 'vfball_T', 'angle', 'mulim')
+
+data_AA_CA <- data.frame(matrix(nrow = 0, ncol = length(columns_AA_CA)))
+
+colnames(data_AA_CA) = columns_AA_CA
+
+#Offset values
+offset_AA = seq(-10, 50, by = 0.5)
+offset_CA = seq(-10, 40, by = 0.5)
+
+#Obtain data for every offset values
+for (AA in offset_AA) {
+  for (CA in offset_CA) {
+    new_data_AA_CA <- generate_data_from_ca_aa(CA, AA)
+    data_AA_CA <- rbind(data_AA_CA, new_data_AA_CA)
+  }
+}
+
+#Add scaled exit velocity to data
+data_AA_CA <- data_AA_CA %>%
+  mutate(scaled_ev = exit_speed / max(data_AA_CA$exit_speed),
+         scaled_ev = round(scaled_ev, 4))
+
+#Add scaled exit velocity per AA to data
+data_AA_CA <- data_AA_CA %>%
+  group_by(AA) %>%
+  mutate(max_exit_speed = max(exit_speed)) %>%
+  ungroup() %>%
+  mutate(scaled_ev_by_AA = exit_speed / max_exit_speed)
+  
+# Data with only max ev for each AA
+data_AA_CA_max_ev <- data_AA_CA %>%
+  group_by(AA) %>%
+  filter(exit_speed == max(exit_speed))
+```
+
+## Function for Filtering Launch Angle
+```{r}
+#Function to filter launch angle
+filter_data_LA <- function(LA) {
+  data_LA <- data_AA_CA %>%
+    filter(round(launch_angle) == LA)
+  return(data_LA)
+}
+
+```
+
+# 2. Plotting Data
+## Plot Data
+```{r, message = FALSE}
+ggplot(data_AA_CA, aes(CA, AA, z = exit_speed)) + geom_contour(binwidth = 1) +
+   geom_text_contour() + geom_abline(CA = AA) + 
+  geom_smooth(data = filter_data_LA(0), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(10), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(20), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(30), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(40), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(50), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_text_repel(data = filter_data_LA(0)[nrow(filter_data_LA(0)), ], aes(label = paste("LA: ", round(launch_angle))), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(10)[nrow(filter_data_LA(10)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(20)[nrow(filter_data_LA(20)), ], aes(label = round(launch_angle)), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(30)[nrow(filter_data_LA(30)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(40)[nrow(filter_data_LA(40)), ], aes(label = round(launch_angle)), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(50)[nrow(filter_data_LA(50)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  labs(title = "Exit Velocity With Respect to Attack Angle and Centerline Angle") + 
+  xlab("Centerline Angle (deg)") + ylab("Attack Angle (deg)")
+
+```
+
+## Plot Scaled EV Data
+```{r}
+plot1 <- ggplot(data_AA_CA, aes(CA, AA, z = scaled_ev)) + stat_contour(binwidth = 0.01) +
+  geom_text_contour(aes(label = round(after_stat(level), 5))) + geom_abline(slope = 1, intercept = 0, color = "black", linetype = "solid") +
+  geom_smooth(data = filter_data_LA(-10), se = FALSE, linetype = "dashed", color = "red") +
+  geom_smooth(data = filter_data_LA(0), se = FALSE, linetype = "dashed", color = "red") +
+  geom_smooth(data = filter_data_LA(10), se = FALSE, linetype = "dashed", color = "red") +
+  geom_smooth(data = filter_data_LA(20), se = FALSE, linetype = "dashed", color = "red") +
+  geom_smooth(data = filter_data_LA(30), se = FALSE, linetype = "dashed", color = "red") +
+  geom_smooth(data = filter_data_LA(40), se = FALSE, linetype = "dashed", color = "red") +
+  geom_smooth(data = filter_data_LA(50), se = FALSE, linetype = "dashed", color = "red") +
+  geom_text_repel(data = filter_data_LA(0)[nrow(filter_data_LA(0)), ], aes(label = paste("LA: ", round(launch_angle))), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(10)[nrow(filter_data_LA(10)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(20)[nrow(filter_data_LA(20)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(30)[nrow(filter_data_LA(30)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(40)[nrow(filter_data_LA(40)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(50)[nrow(filter_data_LA(50)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  labs(title = "Scaled Exit Velocity With Respect to Attack Angle and Centerline Angle") +
+  xlab("Centerline Angle (deg)") + ylab("Attack Angle (deg)")
+
+plot1
+```
+## Plotting LA vs EV by AA
+```{r}
+ggplot(data_AA_CA %>% filter(AA == 5)) + geom_point(aes(launch_angle, exit_speed)) + geom_point(data=data_AA_CA %>% filter(AA == 15), aes(launch_angle, exit_speed)) + geom_point(data=data_AA_CA %>% filter(AA == 25), aes(launch_angle, exit_speed))
+```
+
+# 3. Comparing Excel Data with Quadratic Fit
+
+## Comparing Plots with Original Excel Data and Quadratic Fit
+```{r}
+compare_plots <- function(name, aa, lower_la=-90, upper_la=90) {
+  batter <- name_converter(name)
+  #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
+  data_batter <- sc %>%
+    filter(type == "X") %>%
+    select(player_name, launch_speed, launch_angle) %>%
+    na.omit() %>%
+    #Label data with launch angle for every bins of width 5 degrees
+    filter(player_name == batter) %>%
+    mutate(theta5 = 5 * round(launch_angle / 5, 0)) %>%
+    arrange(launch_angle)
+  
+  #Create data set of Top 15 percent exit velocity within each bins
+  new_df <- data.frame(theta5 = 0, top_15_ev = 0)
+  
+  for (theta in unique(data_batter$theta5)) {
+    n_data <- data_batter %>% 
+      filter(theta5 == theta)
+    df <- data.frame(theta5 = theta, top_15_ev = quantile(n_data$launch_speed, seq(0, 1, 1/20))[18])
+    new_df <- rbind(new_df, df)
+  }
+
+  new_df <- new_df[-c(1),]
+  
+  data_batter <- inner_join(data_batter, new_df, by = "theta5")
+  
+  top_15_data <- data_batter %>%
+    filter(launch_speed >= top_15_ev,
+           launch_angle >= lower_la & launch_angle <= upper_la) %>%
+    mutate(top_15 = "Yes")
+    
+  #Join two data
+  combined_data <- left_join(data_batter, top_15_data, by = c("player_name", "launch_speed", "launch_angle", "theta5")) %>%
+    filter(launch_angle >= lower_la & launch_angle <= upper_la)
+  
+  #Indicate whether or not the exit velocity is in Top 15 percent
+  combined_data <- combined_data %>%
+    mutate(top_15 = ifelse(is.na(top_15), "No", top_15))
+  
+  #Create a quadratic regression for Top 15 percent data
+  top_15_data$launch_angle2 = top_15_data$launch_angle^2
+  
+  quadratic_fit <- lm(launch_speed ~ launch_angle + launch_angle2, data = top_15_data)
+  ev_max <- max(predict(quadratic_fit))
+  top_15_data$scaled_ev = top_15_data$launch_speed / ev_max
+  combined_data <- combined_data %>%
+    mutate(scaled_ev = launch_speed / ev_max)
+  
+  #filter contour plot scaled_ev values with desired attack angle 
+  data_aa <- data_AA_CA %>%
+    filter(AA == aa)
+  
+  ggplot(combined_data) +
+    geom_point(aes(launch_angle, scaled_ev, color = top_15)) +
+    scale_color_manual(values = c("red", "blue"), labels=c("Top 15", "Other")) +
+    stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_15_data, aes(launch_angle, scaled_ev), color = "black", se = FALSE) +
+    geom_vline(aes(xintercept = top_15_data$launch_angle[which.max(predict(quadratic_fit))]), linetype = "dashed") +
+    ggtitle(paste("Exit Velocity vs Launch Angle of", name)) +
+    scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-90, 90, by = 10)) +
+    scale_y_continuous(name = "Scaled Exit Velocity (mph)", limits=c(0.1, 1.1), breaks = seq(0, 1.1, by = 0.1)) +
+    annotate(geom = "text", label = top_15_data$launch_angle[which.max(predict(quadratic_fit))], x = top_15_data$launch_angle[which.max(predict(quadratic_fit))] + 3, y = 0.33, fontface = 'bold', vjust = 1) +
+    #Combine with contour plot data
+    geom_point(data = data_aa, aes(launch_angle, scaled_ev_by_AA), color="green") +
+    annotate(geom = "text", label = paste("AA =", aa), x = -60, y = 1.1, color='green', fontface = 'bold', vjust = 1, size=5)
+
+}
+
+#Testing plots
+# compare_plots("Altuve, Jose", 17, -90, 90)
+
+```
+
+
+# 4. Deep Analysis
+
+## Comparing Plots for Various Players
+```{r}
+# 5 deg Quad Peak LA, Hawk AA
+
+compare_plots("Yuli Gurriel", 7) #-2, 4
+
+compare_plots("Yordan Alvarez", 15.5) # 17, 10
+
+compare_plots("Freddie Freeman", 15) # 16, 10.5
+
+compare_plots("Trea Turner", 10) # 8, 11.5
+
+compare_plots("Kyle Tucker", 17) # 18, 12
+
+compare_plots("Jeremy Peña", 11) # 10, 12.5
+
+compare_plots("Will Smith", 16.5) # 18, 15
+
+compare_plots("Alex Bregman", 11.5) # 11, 16
+
+compare_plots("Mookie Betts", 16) # 16, 16.5
+
+compare_plots("Jose Altuve", 17.5) # 20, 19
+
+```
+## Finding the optimal number of bin size and percentage for quadratic fit
+```{r}
+# 7 deg, 5 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_7_deg_5_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_7_deg_5_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_7_deg_5_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_7_deg_5_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_7_deg_5_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_7_deg_5_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 7 deg, 10 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_7_deg_10_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_7_deg_10_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_7_deg_10_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_7_deg_10_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_7_deg_10_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_7_deg_10_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 7 deg, 15 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_7_deg_15_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_7_deg_15_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_7_deg_15_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_7_deg_15_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_7_deg_15_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_7_deg_15_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 7 deg, 20 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_7_deg_20_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_7_deg_20_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_7_deg_20_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_7_deg_20_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_7_deg_20_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_7_deg_20_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 6 deg, 5 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_6_deg_5_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_6_deg_5_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_6_deg_5_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_6_deg_5_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_6_deg_5_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_6_deg_5_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 6 deg, 10 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_6_deg_10_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_6_deg_10_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_6_deg_10_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_6_deg_10_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_6_deg_10_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_6_deg_10_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 6 deg, 15 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_6_deg_15_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_6_deg_15_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_6_deg_15_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_6_deg_15_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_6_deg_15_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_6_deg_15_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 6 deg, 20 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_6_deg_20_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_6_deg_20_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_6_deg_20_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_6_deg_20_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_6_deg_20_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_6_deg_20_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 5 deg, 5 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_5_deg_5_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_5_deg_5_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_5_deg_5_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_5_deg_5_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_5_deg_5_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_5_deg_5_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 5 deg, 10 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_5_deg_10_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_5_deg_10_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_5_deg_10_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_5_deg_10_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_5_deg_10_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_5_deg_10_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 5 deg, 15 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_5_deg_15_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_5_deg_15_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_5_deg_15_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_5_deg_15_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_5_deg_15_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_5_deg_15_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 5 deg, 20 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_5_deg_20_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_5_deg_20_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_5_deg_20_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_5_deg_20_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_5_deg_20_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_5_deg_20_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 4 deg, 5 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_4_deg_5_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_4_deg_5_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_4_deg_5_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_4_deg_5_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_4_deg_5_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_4_deg_5_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 4 deg, 10 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_4_deg_10_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_4_deg_10_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_4_deg_10_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_4_deg_10_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_4_deg_10_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_4_deg_10_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 4 deg, 15 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_4_deg_15_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_4_deg_15_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_4_deg_15_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_4_deg_15_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_4_deg_15_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_4_deg_15_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 4 deg, 20 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_5_deg_20_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_4_deg_20_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_4_deg_20_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_4_deg_20_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_4_deg_20_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_4_deg_20_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 3 deg 5 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_3_deg_5_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_3_deg_5_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_3_deg_5_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_3_deg_5_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_3_deg_5_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_3_deg_5_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 3 deg 10 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_3_deg_10_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_3_deg_10_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_3_deg_10_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_3_deg_10_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_3_deg_10_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_3_deg_10_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# 3 deg 15 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_3_deg_15_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_3_deg_15_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_3_deg_15_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_3_deg_15_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_3_deg_15_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_3_deg_15_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+```
+
+```{r}
+model_7_deg_5_pct <- lm(peak_la_7_deg_5_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_7_deg_5_pct)$r.squared
+
+model_7_deg_10_pct <- lm(peak_la_7_deg_10_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_7_deg_10_pct)$r.squared
+
+model_7_deg_15_pct <- lm(peak_la_7_deg_15_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_7_deg_15_pct)$r.squared
+
+model_7_deg_20_pct <- lm(peak_la_7_deg_20_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_7_deg_20_pct)$r.squared
+
+model_6_deg_5_pct <- lm(peak_la_6_deg_5_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_6_deg_5_pct)$r.squared
+
+model_6_deg_10_pct <- lm(peak_la_6_deg_10_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_6_deg_10_pct)$r.squared
+
+model_6_deg_15_pct <- lm(peak_la_6_deg_15_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_6_deg_15_pct)$r.squared
+
+model_6_deg_20_pct <- lm(peak_la_6_deg_20_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_6_deg_20_pct)$r.squared
+
+model_5_deg_5_pct <- lm(peak_la_5_deg_5_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_5_deg_5_pct)$r.squared
+
+model_5_deg_10_pct <- lm(peak_la_5_deg_10_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_5_deg_10_pct)$r.squared
+
+model_5_deg_15_pct <- lm(peak_la_5_deg_15_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_5_deg_15_pct)$r.squared
+
+model_5_deg_20_pct <- lm(peak_la_5_deg_20_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_5_deg_20_pct)$r.squared # 0.617467
+
+model_4_deg_5_pct <- lm(peak_la_4_deg_5_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_4_deg_5_pct)$r.squared
+
+model_4_deg_10_pct <- lm(peak_la_4_deg_10_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_4_deg_10_pct)$r.squared
+
+model_4_deg_15_pct <- lm(peak_la_4_deg_15_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_4_deg_15_pct)$r.squared
+
+model_4_deg_20_pct <- lm(peak_la_4_deg_20_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_4_deg_20_pct)$r.squared
+
+model_3_deg_5_pct <- lm(peak_la_3_deg_5_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_3_deg_5_pct)$r.squared
+
+model_3_deg_10_pct <- lm(peak_la_3_deg_10_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_3_deg_10_pct)$r.squared
+
+model_3_deg_15_pct <- lm(peak_la_3_deg_15_pct ~ median_attack_angle, data=hawk_data_inplay_player)
+summary(model_3_deg_15_pct)$r.squared
+```
+
+## Compare Peak Launch Angle with AA from Hawkeye
+```{r}
+# 5 deg, 15 pct
+peak_las <- c()
+for (batter in hawk_data_inplay_player$batter_name) {
+  peak_las <- c(peak_las, la_for_peak_ev(batter)[[1]])
+}
+
+hawk_data_inplay_player$peak_la_5_deg_15_pct <- peak_las
+
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Diaz, Aledmys", "peak_la_5_deg_15_pct"] <- la_for_peak_ev("Díaz, Aledmys")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Dubon, Mauricio", "peak_la_5_deg_15_pct"] <- la_for_peak_ev("Dubón, Mauricio")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Maldonado, Martin", "peak_la_5_deg_15_pct"] <- la_for_peak_ev("Maldonado, Martín")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Mancini III, Trey", "peak_la_5_deg_15_pct"] <- la_for_peak_ev("Mancini, Trey")[[1]]
+hawk_data_inplay_player[hawk_data_inplay_player$batter_name == "Pena, Jeremy", "peak_la_5_deg_15_pct"] <- la_for_peak_ev("Peña, Jeremy")[[1]]
+
+# Plot 
+ggplot(hawk_data_inplay_player) + geom_point(aes(median_attack_angle, peak_la_5_deg_15_pct)) + geom_smooth(data=data_AA_CA_max_ev, aes(AA, launch_angle), method='lm', color='blue') + xlim(0, 25) + ylim(-20, 40) + labs(y="Peak Launch Angle (deg)", x="Median Attack Angle (deg)") + annotate(geom="text", x=15, y=-5, label="Simple Ball-Bat Collision Model", color='blue') #+ theme(axis.text = element_text(size = 14), axis.title = element_text(size = 16), plot.title = element_text(size = 18))
+```
+
+
+
+
+# To do:
+- Find relationship between Peak LA and AA.
+
+
+
+
+
+
+
+# Not good method below.
+## Plot each player's data on AA vs CA graph
+```{r}
+get_player_data <- function(player_name) {
+  data_player <- data_AA_CA %>%
+    filter(round(launch_angle) == round(as.numeric(la_for_peak_ev(player_name)[1])),
+         CA == AA) %>%
+    mutate(player_name = player_name)
+  return(data_player[1,])
+}
+
+top_hr_hitters <- c("Perez, Salvador", "Guerrero Jr., Vladimir", "Ohtani, Shohei", "Semien, Marcus", "Tatis Jr., Fernando", "Judge, Aaron", "Olson, Matt", "Haniger, Mitch" ,"Lowe, Brandon", "Devers, Rafael")
+
+top_avg_hitters <- c("Turner, Trea", "Gurriel, Yuli", "Soto, Juan", "Brantley, Michael", "Guerrero Jr., Vladimir", "Marte, Starling", "Harper, Bryce", "Anderson, Tim", "Castellanos, Nick", "Frazier, Adam") 
+
+
+get_player_df <- function(players) {
+  data_players <- get_player_data(players[1])
+  for (i in 2: length(players)) {
+  new_data_player <- get_player_data((players[i]))
+  data_players <- rbind(data_players, new_data_player)
+  }
+  return(data_players)
+}
+
+plot1 + geom_point(data = get_player_df(top_hr_hitters), aes(CA, AA)) + geom_text_repel(data = get_player_df(top_hr_hitters), aes(label = player_name))
+
+plot1 + geom_point(data = get_player_df(top_avg_hitters), aes(CA, AA)) + geom_text_repel(data = get_player_df(top_avg_hitters), aes(label = player_name))
+```
+
+
+
+
+## Plot each player's Top 15 exit velo on AA vs CA graph
+```{r}
+#Function for plotting Exit Velocity vs Launch Angle for a batter
+get_top_15_data <- function(batter) {
+  #Narrow data into Batter Name, Exit Velocity, and Launch Angle with non NA value
+  data_batter <- new_data2 %>%
+  select(player_name, scaled_ev, launch_speed, launch_angle) %>%
+  na.omit() %>%
+  #Label data with launch angle for every bins of width 5 degrees
+  filter(player_name == batter) %>%
+  mutate(theta5 = 5 * round(launch_angle / 5, 0)) %>%
+  arrange(launch_angle)
+  
+  #Create data set of Top 15 percent exit velocity within each bins
+  new_df <- data.frame(theta5 = 0, top_15_ev = 0)
+  
+  for (theta in unique(data_batter$theta5)) {
+    n_data <- data_batter %>% 
+      filter(theta5 == theta)
+    df <- data.frame(theta5 = theta, top_15_ev = quantile(n_data$scaled_ev, seq(0, 1, 1/10))[10])
+    new_df <- rbind(new_df, df)
+  }
+
+  new_df <- new_df[-c(1),]
+  
+  data_batter <- inner_join(data_batter, new_df, by = "theta5")
+  
+  top_15_data <- data_batter %>%
+    filter(scaled_ev >= top_15_ev,
+           launch_angle > -40) %>%
+    mutate(top_15 = "Yes")
+  return(top_15_data)
+}
+  
+#Get closest data in excel
+
+get_approx_data <- function(player) {
+  player_data <- get_top_15_data(player) %>%
+  filter(launch_angle >= min(data_AA_CA$launch_angle),
+         launch_angle <= max(data_AA_CA$launch_angle))
+  
+
+  data_o <- data_AA_CA %>%
+  filter(launch_angle < 1 + player_data[1, ]$launch_angle,
+         launch_angle > -1 + player_data[1, ]$launch_angle)
+  data_oo <- data_o[which.min(abs(as.numeric(player_data[1, ]$scaled_ev)-data_o$scaled_ev)),]
+  
+  for (i in 2:nrow(player_data)) {
+    new_data_o <- data_AA_CA %>%
+      filter(launch_angle < 1 + player_data[i, ]$launch_angle,
+             launch_angle > -1 + player_data[i, ]$launch_angle)
+    new_data_oo <- new_data_o[which.min(abs(as.numeric(player_data[i, ]$scaled_ev)-new_data_o$scaled_ev)),]
+    data_oo <- rbind(data_oo, new_data_oo)
+  }
+  
+  return(data_oo)
+}
+
+plot1 + geom_point(data = get_approx_data("Ohtani, Shohei"), aes(CA, AA))
+```
+
+```{r}
+#Function for plotting Exit Velocity vs Launch Angle for a batter
+get_all_data <- function(batter) {
+  data_batter <- new_data2 %>%
+  #Label data with launch angle for every bins of width 5 degrees
+  filter(player_name == batter) %>%
+  mutate(theta5 = 5 * round(launch_angle / 5, 0)) %>%
+  arrange(launch_angle)
+  
+  #Create data set of Top 15 percent exit velocity within each bins
+  new_df <- data.frame(theta5 = 0, top_15_ev = 0)
+  
+  for (theta in unique(data_batter$theta5)) {
+    n_data <- data_batter %>% 
+      filter(theta5 == theta)
+    df <- data.frame(theta5 = theta, top_15_ev = quantile(n_data$scaled_ev, seq(0, 1, 1/10))[10])
+    new_df <- rbind(new_df, df)
+  }
+
+  new_df <- new_df[-c(1),]
+  
+  data_batter <- inner_join(data_batter, new_df, by = "theta5")
+  
+  top_15_data <- data_batter %>%
+    filter(scaled_ev >= top_15_ev,
+           launch_angle > -40) %>%
+    mutate(top_15 = "Yes")
+  
+  combined_data <- left_join(data_batter, top_15_data, by = c("player_name", "scaled_ev", "launch_speed", "launch_angle", "theta5", "description", "events", "top_15_ev", "max_ev"))
+    #Indicate whether or not the exit velocity is in Top 15 percent
+  combined_data <- combined_data %>%
+    mutate(top_15 = ifelse(is.na(top_15), "No", top_15)) %>%
+    filter(launch_angle > -40) %>%
+    mutate(events = ifelse(events == "", "foul", events))
+  
+  #Reduce number of different types of events, excluding bunts, catcher interf, game advisory
+  reduced_events_data <- combined_data %>%
+    mutate(reduced_events = case_when(events %in% c("single") ~ "single",
+                                      events %in% c("double", "triple") ~ "double & triple",
+                                      events %in% c("home_run") ~ "homerun",
+                                      events %in% c("field_out", "grounded_into_double_play", "field_error", "force_out", "sac_fly", "fielders_choice", "double_play", "fielders_choice_out", "sac_fly_double_play", "triple_play") ~ "out",
+                                      events == "foul" ~ "foul")) %>%
+    na.omit()
+
+  return(reduced_events_data)
+}
+  
+#Get closest data in excel
+
+get_approx_data2 <- function(player) {
+  player_data <- get_all_data(player) %>%
+  filter(launch_angle >= min(data_AA_CA$launch_angle),
+         launch_angle <= max(data_AA_CA$launch_angle))
+  
+
+  data_o <- data_AA_CA %>%
+  filter(launch_angle < 1 + player_data[1, ]$launch_angle,
+         launch_angle > -1 + player_data[1, ]$launch_angle)
+  data_oo <- data_o[which.min(abs(as.numeric(player_data[1, ]$scaled_ev)-data_o$scaled_ev)),]
+  
+  for (i in 2:nrow(player_data)) {
+    new_data_o <- data_AA_CA %>%
+      filter(launch_angle < 1 + player_data[i, ]$launch_angle,
+             launch_angle > -1 + player_data[i, ]$launch_angle)
+    new_data_oo <- new_data_o[which.min(abs(as.numeric(player_data[i, ]$scaled_ev)-new_data_o$scaled_ev)),]
+    data_oo <- rbind(data_oo, new_data_oo)
+  }
+  return(data_oo)
+}
+
+#######################################################################################################
+plot1 + geom_point(data = get_approx_data2("Ohtani, Shohei"), aes(CA, AA))
+
+ggplot(get_approx_data2("Altuve, Jose")) + geom_point(aes(CA, AA))
+
+  do2 <- get_all_data("Ohtani, Shohei") %>%
+  filter(launch_angle >= min(data_AA_CA$launch_angle),
+         launch_angle <= max(data_AA_CA$launch_angle))
+  
+
+  do3 <- data_AA_CA %>%
+  filter(launch_angle < 1 + do2[1, ]$launch_angle,
+         launch_angle > -1 + do2[1, ]$launch_angle)
+  do4 <- do3[which.min(abs(as.numeric(do2[1, ]$scaled_ev)-do3$scaled_ev)),]
+  
+  for (i in 2:nrow(do2)) {
+    o2 <- data_AA_CA %>%
+      filter(launch_angle < 1 + do2[i, ]$launch_angle,
+             launch_angle > -1 + do2[i, ]$launch_angle)
+    o3 <- o2[which.min(abs(as.numeric(do2[i, ]$scaled_ev)-o2$scaled_ev)),]
+    do4 <- rbind(do4, o3)
+  }
+  do4 <- do4 %>%
+    filter(CA >= -10 & CA <= 50,
+           AA >= 00 & AA <= 40)
+
+
+```
+
+```{r}
+
+plot1 + geom_point(data = get_approx_data("Altuve, Jose"), aes(CA, AA))
+
+```
+
+```{r}
+AA_LA <- data_AA_CA %>%
+  filter(AA == CA) %>%
+  select(AA, launch_angle)
+
+ggplot(AA_LA, aes(AA, launch_angle)) + geom_point() + geom_smooth()
+```
+
+
+```{r}
+plot11 <- ggplot(data_AA_CA, aes(launch_angle , exit_speed, z = AA)) + geom_contour(binwidth = 0.01) 
+
++
+  
+  geom_text_contour(aes(label = round(..level.., 2))) +
+  geom_abline(CA = AA) + 
+  geom_smooth(data = filter_data_LA(0), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(10), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(20), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(30), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(40), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_smooth(data = filter_data_LA(50), se = FALSE, linetype = "dashed", color = "red") + 
+  geom_text_repel(data = filter_data_LA(0)[nrow(filter_data_LA(0)), ], aes(label = paste("LA: ", round(launch_angle))), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(10)[nrow(filter_data_LA(10)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(20)[nrow(filter_data_LA(20)), ], aes(label = round(launch_angle)), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(30)[nrow(filter_data_LA(30)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  geom_text_repel(data = filter_data_LA(40)[nrow(filter_data_LA(40)), ], aes(label = round(launch_angle)), color = "red", position = "identity") + 
+  geom_text_repel(data = filter_data_LA(50)[nrow(filter_data_LA(50)), ], aes(label = round(launch_angle)), color = "red", position = "identity") +
+  labs(title = "Exit Velocity With Respect to Attack Angle and Centerline Angle") + 
+  xlab("Centerline Angle (deg)") + ylab("Attack Angle (deg)")
+
+```
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

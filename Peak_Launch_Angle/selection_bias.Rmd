@@ -1,0 +1,266 @@
+---
+title: "selection_bias"
+author: "Riku Komatani"
+date: "2023-08-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+tm_data <- read.csv("C:/Users/12244/R_projects2022/Saberseminar08122023/10276f5c-13b4-4c6c-821f-ba02fa3a5771.csv")
+```
+
+
+```{r}
+sc %>%
+  group_by(description, events, woba_value) %>%
+  dplyr:: summarize(count = n()) %>%
+  filter(count > 100)
+
+```
+
+
+```{r}
+# General woba
+tm_data_woba <- tm_data %>%
+  mutate(woba_value = case_when(pitchcall %in% c("HitbyPitch", "HitByPitch") ~ 0,
+                                korbb == "Walk" ~ 0.7,
+                                korbb %in% c("Strikeout", "StrikeOut") ~ 0,
+                                playresult %in% c("Single", "single", "SIngle") ~ 0.9,
+                                playresult == "Double" ~ 1.25,
+                                playresult == "Triple" ~ 1.60,
+                                playresult == "HomeRun" ~ 2,
+                                playresult %in% c("Out", "OUt", "out", "FieldersChoice", "Fielderschoice") ~ 0,
+                                playresult %in% c("Error") ~ 0.9,
+                                TRUE ~ NA))
+
+```
+
+```{r}
+# Validate
+tm_data_woba %>%
+  group_by(woba_value, playresult, korbb, pitchcall) %>%
+  dplyr::summarize(count = n())
+```
+
+```{r}
+# Filter data
+filtered_tm <- tm_data_woba %>%
+  filter(!(is.na(woba_value))) %>%
+  group_by(batterid) %>%
+  dplyr::summarise(count = n()) %>%
+  filter(count > 100)
+```
+
+```{r}
+#Function for plotting Exit Velocity vs Launch Angle for all contacted balls for a batter
+plot_ev_vs_la_tm <- function(batid) {
+  #Narrow data into Batter batterid, Exit Velocity, and Launch Angle with non NA value. Filter to in-play.
+  data_batter <- tm_data_woba %>%
+    select(batterid, exitspeed, angle) %>%
+    na.omit() %>%
+  #Label data with launch angle for every bins of width 5 degrees
+    filter(batterid == batid) %>%
+    mutate(theta5 = 5 * round(angle / 5, 0)) %>%
+    arrange(angle)
+  
+  #Create data set of top_15 percent exit velocity within each bins
+  new_df <- data.frame(theta5 = 0, top_15_ev = 0)
+  
+  for (theta in unique(data_batter$theta5)) {
+    n_data <- data_batter %>% 
+      filter(theta5 == theta)
+    df <- data.frame(theta5 = theta, top_15_ev = quantile(n_data$exitspeed, seq(0, 1, 1/20))[18])
+    new_df <- rbind(new_df, df)
+  }
+
+  new_df <- new_df[-c(1),]
+  
+  data_batter <- inner_join(data_batter, new_df, by = "theta5")
+  
+  top_15_data <- data_batter %>%
+    filter(exitspeed >= top_15_ev) %>%
+    mutate(top_15 = "Yes")
+    
+  #Join two data
+  combined_data <- left_join(data_batter, top_15_data, by = c("batterid", "exitspeed", "angle", "theta5"))
+  
+  #Indicate whether or not the exit velocity is in top_15 percent
+  combined_data <- combined_data %>%
+    mutate(top_15 = ifelse(is.na(top_15), "No", top_15))
+  
+  #Create a quadratic regression for top_15 percent data
+  top_15_data$angle2 = top_15_data$angle^2
+  
+  quadratic_fit <- lm(exitspeed ~ angle + angle2, data = top_15_data)
+  
+  #Scatter plot data differentiating the top_15 percent points by color and indicating the maximum predicted value for the launch angle that gives the max exit velocity using the quadratic regression
+  ggplot(combined_data) + 
+    geom_point(aes(angle, exitspeed, color = top_15)) + 
+    scale_color_manual(values = c("red", "blue")) + 
+    stat_smooth(method = "lm", formula = y ~ x + I(x^2), data = top_15_data, aes(angle, exitspeed), color = "black", se = FALSE) + 
+    geom_vline(aes(xintercept = top_15_data$angle[which.max(predict(quadratic_fit))]), linetype = "dashed") + 
+    ggtitle(paste("Exit Velocity vs Launch Angle of", batid)) + 
+    scale_x_continuous(name = "Launch Angle (deg)", breaks = seq(-80, 80, by = 20)) + 
+    annotate(geom = "text", label = top_15_data$angle[which.max(predict(quadratic_fit))], x = top_15_data$angle[which.max(predict(quadratic_fit))], y = 40, vjust = 1, fontface="bold") +
+    ylim(10, 120) + 
+    ylab("Exit Velocity (mph)") #+ theme(axis.text = element_text(size = 14), axis.title = element_text(size = 16), plot.title = element_text(size = 18), legend.text = element_text(size = 14), legend.title = element_text(size = 16))
+}
+
+```
+
+```{r}
+la_for_peak_ev_tm <- function(batid) {
+  
+  #Narrow data into Batter batterid, Exit Velocity, and Launch Angle with non NA value. Filter to in-play.
+  test_data <- tm_data_woba %>%
+    select(batterid, exitspeed, angle) %>%
+    na.omit() %>%
+    filter(batterid == batid) %>%
+    
+  #Label data with launch angle for every bins of width 5 degrees
+    mutate(theta5 = 5 * round(angle / 5, 0)) %>%
+    arrange(angle)
+  
+  if (nrow(test_data) == 0) {
+    return(list(NA, NA))
+  }
+  
+  #Create data set of top 5 exit velocity within each bins
+  new_df <- data.frame(theta5 = 0, top_15_ev = 0)
+
+  for (theta in unique(test_data$theta5)) {
+    n_data <- test_data %>% 
+      filter(theta5 == theta)
+    df <- data.frame(theta5 = theta, top_15_ev = quantile(n_data$exitspeed, seq(0, 1, 1/20))[18])
+    new_df <- rbind(new_df, df)
+  }
+
+  new_df <- new_df[-c(1),]
+  
+  test_data <- inner_join(test_data, new_df, by = "theta5")
+
+  top_15_data <- test_data %>%
+    filter(exitspeed >= top_15_ev) %>%
+    mutate(top_15 = "Yes")
+  
+  #Create a quadratic regression for top_15 percent data
+  top_15_data$angle2 = top_15_data$angle^2
+  
+  quadratic_fit <- lm(exitspeed ~ angle + angle2, data = top_15_data)
+
+  #return launch angle that gives the max exit velocity and max exit velocity as a list
+  return(list(top_15_data$angle[which.max(predict(quadratic_fit))], max(predict(quadratic_fit))))
+}
+```
+
+```{r}
+#woba for all at bats 
+woba_data_tm <- function(batid, data) {
+  w_data <- data %>%
+    filter(batterid == batid)
+  return(mean(w_data$woba_value, na.rm = TRUE))
+}
+
+#woba for BIP 
+woba_bip_data_tm <- function(batid, data) {
+  w_bip_data <- data %>%
+    filter(batterid == batid,
+           pitchcall == 'InPlay')
+  return(mean(w_bip_data$woba_value, na.rm = TRUE))
+}
+
+#Whiff rate for swings
+swing_and_miss_percentage_tm <- function(batid, data) {
+  sw_data <- data %>%
+    filter(batterid == batid,
+           pitchcall %in% c("FoulBall", "InPlay", "StrikeSwinging"))
+  sam_data <- sw_data %>%
+    filter(pitchcall == "StrikeSwinging")
+  return(nrow(sam_data)/nrow(sw_data))
+}
+```
+
+```{r}
+la_ev_batter_tm <- function(data) {
+  df <- data.frame(batterid = " ", angle = 0, exitspeed = 0, woba = 0, woba_bip = 0, whiff_rate = 0)
+  for(batid in unique(data$batterid)) {
+  new_df <- data.frame(batterid = batid, angle = la_for_peak_ev_tm(batid)[[1]], exitspeed = la_for_peak_ev_tm(batid)[[2]], woba = woba_data_tm(batid, data), woba_bip = woba_bip_data_tm(batid, data), whiff_rate = swing_and_miss_percentage_tm(batid, data))
+  df <- rbind(df, new_df)
+  }
+  df <- df[-c(1), ]
+  return(df)
+}
+
+qualified_batters_tm <- tm_data_woba %>%
+  filter(batterid %in% filtered_tm$batterid)
+
+# tm_q_data <- la_ev_batter_tm(qualified_batters_tm)
+
+write.csv(tm_q_data, "tm_q_data.csv")
+
+tm_q_df <- read.csv("tm_q_data.csv")
+
+tm_q_df <- tm_q_df %>%
+  na.omit() %>%
+  filter(angle <= 40)
+```
+
+
+```{r}
+# EV vs Whiff rate
+ggplot(tm_q_df, aes(whiff_rate, exitspeed, color = woba)) + geom_point() + geom_smooth(method='gam') + scale_colour_gradientn(colours = (rainbow(5))) 
+
+model_tm <- lm(exitspeed ~ whiff_rate, data=tm_q_df)
+
+summary(model_tm)
+
+cor(tm_q_df$exitspeed, tm_q_df$whiff_rate)
+```
+- Lower slope (18.8767: 7.2042), lower adjusted R-squared (0.1485: 0.01713), and lower correlation (0.3867977: 0.1409772) compared to Statcast data
+
+```{r}
+# wob vs peak LA
+
+#Plot wOBA versus peak launch angle of qualified batters: all at bats 
+plot_woba_tm <- ggplot(tm_q_df, aes(angle, woba, label = batterid, color = exitspeed)) + geom_point() + geom_smooth() + xlab("Peak Launch Angle (deg)") + ylab("Weighted On-base Average") + scale_colour_gradientn(colours = (rainbow(5)))
+
+plot_woba_tm
+
+tm_q_df4 <- tm_q_df %>%
+  mutate(exitspeed_bin = case_when(exitspeed < 90 ~ "slow",
+                                   exitspeed < 100 ~ "medium",
+                                   TRUE ~ "fast"))
+
+plot_woba_tm_3 <- ggplot(tm_q_df4, aes(angle, woba, label = batterid, color = exitspeed_bin)) + geom_point() + geom_smooth(method='gam') + xlab("Peak Launch Angle (deg)") + ylab("Weighted On-base Average") + scale_color_manual(values=c("fast" = "blue", "medium" = "green", "slow" = "red"))
+
+plot_woba_tm_3
+
+```
+
+
+```{r}
+#Plot wOBA for BIP versus peak launch angle of qualified batters
+plot_woba_bip_tm <- ggplot(tm_q_df, aes(angle, woba_bip, label = batterid, color = exitspeed)) + geom_point() + geom_smooth(method='gam') + xlab("Peak Launch Angle (deg)") + ylab("Weighted On-base Average for BIP") + scale_colour_gradientn(colours = (rainbow(5)))
+
+plot_woba_bip_tm
+
+
+plot_woba_bip3_tm <- ggplot(tm_q_df4, aes(angle, woba_bip, label = batterid, color = exitspeed_bin)) + geom_point() + geom_smooth(method='gam') + xlab("Peak Launch Angle (deg)") + ylab("Weighted On-base Average for BIP") + scale_color_manual(values=c("fast" = "blue", "medium" = "green", "slow" = "red"))
+
+plot_woba_bip3_tm
+
+
+```
+
+
+
